@@ -69,7 +69,11 @@ void CustomDynamicsWorld::integrateConstrainedBodiesWithCustomPhysics(btScalar t
     {
         auto x = body->getCenterOfMassPosition();
         auto q = body->getOrientation();
-
+        body->setLinearVelocity(body->getLinearVelocity() + timeStep * body->getInvMass() * body->getTotalForce());
+        // body->setAngularVelocity(body->getAngularVelocity() + body->getInvInertiaTensorWorld());
+        x = x + timeStep * body->getLinearVelocity();
+        q = q + 1/2 * timeStep * body->getAngularVelocity() * q;
+        body->applyGravity();
         body->setCenterOfMassTransform(btTransform(q, x));
     }
 
