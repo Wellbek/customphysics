@@ -75,12 +75,11 @@ void CustomDynamicsWorld::integrateConstrainedBodiesWithCustomPhysics(btScalar t
     }
 
     // filter out the btPoint2PointConstraint instances:
-    auto world = *this;
-    const auto num_constraints = world.getNumConstraints();
+    const auto num_constraints = this->getNumConstraints();
     std::vector<btPoint2PointConstraint *> point_constraints;
 
     for (int i = 0; i < num_constraints; ++i){
-        auto c = world.getConstraint(i);
+        auto c = this->getConstraint(i);
         if(c->getConstraintType() == POINT2POINT_CONSTRAINT_TYPE){
             point_constraints.push_back(dynamic_cast<btPoint2PointConstraint *>(c));
         }
@@ -88,7 +87,6 @@ void CustomDynamicsWorld::integrateConstrainedBodiesWithCustomPhysics(btScalar t
 
     // sequential impulses method:
     // 1. Update velocities of rigid bodies by applying external forces. (see above)
-    // 2. Until convergence or maximum number of iterations:
     for (auto c : point_constraints){
         btRigidBody* body_j = &c->getRigidBodyA();
         btRigidBody* body_k = &c->getRigidBodyB();
@@ -98,12 +96,14 @@ void CustomDynamicsWorld::integrateConstrainedBodiesWithCustomPhysics(btScalar t
         const btMatrix3x3 I = btMatrix3x3::getIdentity();
         btVector3 u_j = body_j->getLinearVelocity();
         btVector3 u_k = body_k->getLinearVelocity();
+        // 2. Until convergence or maximum number of iterations:
         for (int i = 0; i < getConstraintIterations(); i++){
             // Compute Si for the system of the two rigid bodies constrained only by the current constraint in isolation
             btMatrix3x3 R_j = body_j->getWorldTransform().getBasis();
             btMatrix3x3 R_k = body_k->getWorldTransform().getBasis();
-            // TODO: right datatype for G 
-            auto G = (I, - (R_j * *r_j), I * -1, (R_k * *r_k)); 
+
+            //auto G = (I, - (R_j * *r_j), I * -1, (R_k * *r_k)); 
+            auto G = I; // TODO: replace I by actual G computation
 
             // NOTE: CHAT GPT und so...
             auto inv_mass_j = body_j->getInvMass();
@@ -116,8 +116,8 @@ void CustomDynamicsWorld::integrateConstrainedBodiesWithCustomPhysics(btScalar t
 
             auto S = G * M.inverse() * G.transpose();
             // Compute an impulse represented by ∆λ˜_i by ∆λ˜_i = S^{−1]_i(−Giu), where u = (u_j , u_k).
-            btVector3 impulse_j = S.inverse() * (-G * u_j);
-            btVector3 impulse_k = S.inverse() * (-G * u_k);
+            btVector3 impulse_j = S.inverse() * (G * -1 * u_j);
+            btVector3 impulse_k = S.inverse() * (G * -1 * u_k);
             // Apply the impulse by updating the velocities of rigid bodies j and k, i.e. u <- u + M^{-1}G^T_i ∆λ˜
             u_j += M.inverse() * G.transpose() * impulse_j;
             u_k += M.inverse() * G.transpose() * impulse_k;
@@ -128,9 +128,9 @@ void CustomDynamicsWorld::integrateConstrainedBodiesWithCustomPhysics(btScalar t
         // 3.1 Compute new positions z^{n+1} = z^n + ∆t H u^{n+1}  NOTE: (in practice: use quaternion update like before)
         btVector3 z_j = body_j->getCenterOfMassPosition();
         btVector3 z_k = body_k->getCenterOfMassPosition();
-        auto H = // TODO: this
-        z_j += timeStep * H * u_j;
-        z_k += timeStep * H * u_k;
+        auto H = I;// TODO: replace I by actual H computation
+        z_j += H * u_j * timeStep;
+        z_k += H * u_k * timeStep;
 
         // 3.2 Normalize quaternions to obtain final rotational state (avoids drift from unit property)
         btQuaternion q_j = body_j->getOrientation();
