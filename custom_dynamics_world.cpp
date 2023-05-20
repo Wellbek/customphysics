@@ -62,9 +62,6 @@ void CustomDynamicsWorld::integrateConstrainedBodiesWithCustomPhysics(btScalar t
     // collision objects which are not rigid bodies.
     auto bodies = collectBodies(getCollisionObjectArray());
 
-    // The below does nothing, it just touches the center of mass transforms of each body
-    // (turns out that not doing this somehow causes some strange issues in Godot).
-    // You can use this as a starting point for unconstrained time integration.
     for (auto body : bodies)
     {
         auto x = body->getCenterOfMassPosition();
@@ -75,6 +72,75 @@ void CustomDynamicsWorld::integrateConstrainedBodiesWithCustomPhysics(btScalar t
         q = q + 1/2 * timeStep * body->getAngularVelocity() * q;
         body->applyGravity();
         body->setCenterOfMassTransform(btTransform(q, x));
+    }
+
+    // filter out the btPoint2PointConstraint instances:
+    auto world = *this;
+    const auto num_constraints = world.getNumConstraints();
+    std::vector<btPoint2PointConstraint *> point_constraints;
+
+    for (int i = 0; i < num_constraints; ++i){
+        auto c = world.getConstraint(i);
+        if(c->getConstraintType() == POINT2POINT_CONSTRAINT_TYPE){
+            point_constraints.push_back(dynamic_cast<btPoint2PointConstraint *>(c));
+        }
+    }
+
+    // sequential impulses method:
+    // 1. Update velocities of rigid bodies by applying external forces. (see above)
+    // 2. Until convergence or maximum number of iterations:
+    for (auto c : point_constraints){
+        btRigidBody* body_j = &c->getRigidBodyA();
+        btRigidBody* body_k = &c->getRigidBodyB();
+        btMatrix3x3 R_j, R_k; // rotation matrices
+        const btVector3* r_j = &c->getPivotInA(); // attachement point for body j
+        const btVector3* r_k = &c->getPivotInA(); // attachement point for body k
+        const btMatrix3x3 I = btMatrix3x3::getIdentity();
+        btVector3 u_j = body_j->getLinearVelocity();
+        btVector3 u_k = body_k->getLinearVelocity();
+        for (int i = 0; i < getConstraintIterations(); i++){
+            // Compute Si for the system of the two rigid bodies constrained only by the current constraint in isolation
+            btMatrix3x3 R_j = body_j->getWorldTransform().getBasis();
+            btMatrix3x3 R_k = body_k->getWorldTransform().getBasis();
+            // TODO: right datatype for G 
+            auto G = (I, - (R_j * *r_j), I * -1, (R_k * *r_k)); 
+
+            // NOTE: CHAT GPT und so...
+            auto inv_mass_j = body_j->getInvMass();
+            auto inv_mass_k = body_k->getInvMass();
+            auto inv_total_mass = inv_mass_j + inv_mass_k;
+            auto inv_inertia_j = body_j->getInvInertiaTensorWorld();
+            auto inv_inertia_k = body_k->getInvInertiaTensorWorld();
+            auto inv_total_inertia = inv_inertia_j + inv_inertia_k;
+            auto M = inv_total_inertia.inverse() + I * inv_total_mass; // mass matrix
+
+            auto S = G * M.inverse() * G.transpose();
+            // Compute an impulse represented by ∆λ˜_i by ∆λ˜_i = S^{−1]_i(−Giu), where u = (u_j , u_k).
+            btVector3 impulse_j = S.inverse() * (-G * u_j);
+            btVector3 impulse_k = S.inverse() * (-G * u_k);
+            // Apply the impulse by updating the velocities of rigid bodies j and k, i.e. u <- u + M^{-1}G^T_i ∆λ˜
+            u_j += M.inverse() * G.transpose() * impulse_j;
+            u_k += M.inverse() * G.transpose() * impulse_k;
+            body_j->setLinearVelocity(u_j);
+            body_k->setLinearVelocity(u_k);
+        }
+        // 3. Update positions by steps 3.1 and 3.2 (velocities are already up-to-date).
+        // 3.1 Compute new positions z^{n+1} = z^n + ∆t H u^{n+1}  NOTE: (in practice: use quaternion update like before)
+        btVector3 z_j = body_j->getCenterOfMassPosition();
+        btVector3 z_k = body_k->getCenterOfMassPosition();
+        auto H = // TODO: this
+        z_j += timeStep * H * u_j;
+        z_k += timeStep * H * u_k;
+
+        // 3.2 Normalize quaternions to obtain final rotational state (avoids drift from unit property)
+        btQuaternion q_j = body_j->getOrientation();
+        btQuaternion q_k = body_k->getOrientation();
+        q_j.safeNormalize();
+        q_k.safeNormalize();
+
+        // finally, update positions
+        body_j->setCenterOfMassTransform(btTransform(q_j, z_j));
+        body_k->setCenterOfMassTransform(btTransform(q_k, z_k));
     }
 
     // When looping over your constraints, you can use getConstraintIterations() to obtain the number of
