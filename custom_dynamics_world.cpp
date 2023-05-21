@@ -26,38 +26,93 @@ void transposeConstraintMap(const btMatrix3x12& mat, btMatrix12x3& res){
     }
 }
 
-btMatrix3x3 multiply(const btMatrix3x12& mat1, const btMatrix12x3& mat2){
-    btMatrix3x3 res;
-    // TODO
-    return res;
+void multiply(const btMatrix3x12& mat1, const btMatrix12x3& mat2, btMatrix3x3& res){
+    int i,j,x;
+    for (i = 0; i < 3; i++) {
+        for (j = 0; j < 3; j++) {
+            res[i][j] = 0;
+            for (x = 0; x < 12; x++) {
+                res[i][j] += mat1[x%4][i][x%3] * mat2[x%4][x%3][j];
+            }
+        }
+    }
 }
 
 void multiply(const btMatrix12x3& mat1, const btMatrix3x3& mat2, btMatrix12x3& res){
-    // TODO
+    int i,j,x;
+    for (i = 0; i < 12; i++) {
+        for (j = 0; j < 3; j++) {
+            res[i%4][i%3][j] = 0;
+            for (x = 0; x < 3; x++) {
+                res[i%4][i%3][j] += mat1[i%4][i%3][x] * mat2[x][j];
+            }
+        }
+    }
 }
 
 void multiply(const btMatrix3x3& mat1, const btMatrix3x12& mat2, btMatrix3x12& res){
-    // TODO
+    int i,j,x;
+    for (i = 0; i < 3; i++) {
+        for (j = 0; j < 12; j++) {
+            res[j%4][i][j%3] = 0;
+            for (x = 0; x < 3; x++) {
+                res[j%4][i][j%3] += mat1[i][x] * mat2[j%4][x][j%3];
+            }
+        }
+    }
 }
 
 void multiply(const btMatrix3x12& mat1, const btMatrix12x12& mat2, btMatrix12x3& res){
-    // TODO
+    int i,j,x;
+    for (i = 0; i < 3; i++) {
+        for (j = 0; j < 12; j++) {
+            res[j%4][i][j%3] = 0;
+            for (x = 0; x < 12; x++) {
+                res[j%4][i][j%3] += mat1[x%4][i][x%3] * mat2[x%4][j%4][x%3][j%3];
+            }
+        }
+    }
 }
 
 void multiply(const btMatrix12x12& mat1, const btMatrix12x3& mat2, btMatrix3x12& res){
-    // TODO
+    int i,j,x;
+    for (i = 0; i < 12; i++) {
+        for (j = 0; j < 3; j++) {
+            res[i%4][i%3][j] = 0;
+            for (x = 0; x < 12; x++) {
+                res[i%4][i%3][j] += mat1[i%4][x%4][i%3][x%3] * mat2[x%4][x%3][j];
+            }
+        }
+    }
 }
 
 void multiply(const btMatrix3x12& mat, btScalar s, btMatrix3x12& res){
-    // TODO
+    int i,j,x;
+    for (i = 0; i < 3; i++) {
+        for (j = 0; j < 12; j++) {
+            res[j%4][i][j%3] = mat[j%4][i][j%3]*s;
+        }
+    }
 }
 
 void multiply(const btMatrix3x12& mat, const btVector12& vec, btVector3& res){
-    // TODO
+    int i,j,x;
+    for (i = 0; i < 3; i++) {
+        res[i] = 0;
+        for (x = 0; x < 12; x++) {
+            res[i] += mat[x%4][i][x%3] * vec[x%4][x%3];
+        }
+    }
 }
 
 void multiply(const btMatrix12x3& mat, const btVector3& vec, btVector12& res){
-    // TODO
+    int i,j,x;
+    for (i = 0; i < 12; i++) {
+        res[i%4][i%3] = 0;
+        for (x = 0; x < 3; x++) {
+            res[i%4][i%3] += mat[i%4][i%3][x] * vec[x];
+        }
+    }
 }
 
 void CustomDynamicsWorld::internalSingleStepSimulation(btScalar timeStep)
@@ -186,7 +241,8 @@ void CustomDynamicsWorld::integrateConstrainedBodiesWithCustomPhysics(btScalar t
             // 2.1.3           
             btMatrix3x12 GM_inv;
             multiply(G, M_inv, GM_inv);
-            auto S = multiply(GM_inv, G_transpose);
+            btMatrix3x3 S;
+            multiply(GM_inv, G_transpose, S);
 
             // 2.2 Compute an impulse represented by ∆λ˜_i by ∆λ˜_i = S^{−1]_i(−Giu), where u = (u_j , u_k).
             btVector12 u = {body_j->getLinearVelocity(), body_j->getAngularVelocity(), body_k->getLinearVelocity(), body_k->getAngularVelocity()};
@@ -213,6 +269,7 @@ void CustomDynamicsWorld::integrateConstrainedBodiesWithCustomPhysics(btScalar t
         btVector3 x_k = body_k->getCenterOfMassPosition();
         x_k += timeStep * body_k->getLinearVelocity();
 
+        // TODO update rotation
         btVector3 omega_j = body_j->getAngularVelocity();
         btQuaternion q_j = body_j->getOrientation();
         //q_j += timeStep *  btQuaternion(omega_j.x(), omega_j.y(), omega_j.z(), 0);
