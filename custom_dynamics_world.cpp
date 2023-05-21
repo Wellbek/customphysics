@@ -26,13 +26,6 @@ void transposeConstraintMap(const btMatrix3x12& mat, btMatrix12x3& res){
     }
 }
 
-// transpose of each block + rearrangement of blocks (btMatrix3x12 -> btMatrix12x3)
-void transposeConstraintMap(const btMatrix3x12& mat, btMatrix12x3& res){
-    for (int i = 0; i < 4; i++) {
-        res[i] = mat[i].transpose();
-    }
-}
-
 btMatrix3x3 multiply(const btMatrix3x12& mat1, const btMatrix12x3& mat2){
     btMatrix3x3 res;
     // TODO
@@ -206,7 +199,6 @@ void CustomDynamicsWorld::integrateConstrainedBodiesWithCustomPhysics(btScalar t
             // 2.3 Apply the impulse by updating the velocities of rigid bodies j and k, i.e. u <- u + M^{-1}G^T_i ∆λ˜
             btMatrix12x3 M_invG_transpose;
             multiply(M_inv, G_transpose, M_invG_transpose);
-            btMatrix12x3 u;
             multiply(M_invG_transpose, impulse, u);
 
             body_j->setLinearVelocity(body_j->getLinearVelocity() + u[0]);
