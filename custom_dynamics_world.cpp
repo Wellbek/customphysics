@@ -5,6 +5,68 @@
 #include <vector>
 #include <iostream>
 
+typedef btMatrix3x3 btMatrix12x12[4][4];
+typedef btMatrix3x3 btMatrix3x12[4];
+typedef btMatrix3x3 btMatrix12x3[4];
+typedef btVector3 btVector12[4];
+
+// for a diagonal matrix consisting of blocks with each block being invertible, the inverse of the matrix is given by the inverse of each block matrix
+// https://en.wikipedia.org/wiki/Block_matrix
+void inverseDiagBlock3x3(btMatrix12x12& mat){
+    for (int i = 0; i < 4; i++) {
+        btMatrix3x3& block = mat[i][i];
+        block = block.inverse();
+    }
+}
+
+// transpose of each block + rearrangement of blocks (btMatrix3x12 -> btMatrix12x3)
+void transposeConstraintMap(const btMatrix3x12& mat, btMatrix12x3& res){
+    for (int i = 0; i < 4; i++) {
+        res[i] = mat[i].transpose();
+    }
+}
+
+// transpose of each block + rearrangement of blocks (btMatrix3x12 -> btMatrix12x3)
+void transposeConstraintMap(const btMatrix3x12& mat, btMatrix12x3& res){
+    for (int i = 0; i < 4; i++) {
+        res[i] = mat[i].transpose();
+    }
+}
+
+btMatrix3x3 multiply(const btMatrix3x12& mat1, const btMatrix12x3& mat2){
+    btMatrix3x3 res;
+    // TODO
+    return res;
+}
+
+void multiply(const btMatrix12x3& mat1, const btMatrix3x3& mat2, btMatrix12x3& res){
+    // TODO
+}
+
+void multiply(const btMatrix3x3& mat1, const btMatrix3x12& mat2, btMatrix3x12& res){
+    // TODO
+}
+
+void multiply(const btMatrix3x12& mat1, const btMatrix12x12& mat2, btMatrix12x3& res){
+    // TODO
+}
+
+void multiply(const btMatrix12x12& mat1, const btMatrix12x3& mat2, btMatrix3x12& res){
+    // TODO
+}
+
+void multiply(const btMatrix3x12& mat, btScalar s, btMatrix3x12& res){
+    // TODO
+}
+
+void multiply(const btMatrix3x12& mat, const btVector12& vec, btVector3& res){
+    // TODO
+}
+
+void multiply(const btMatrix12x3& mat, const btVector3& vec, btVector12& res){
+    // TODO
+}
+
 void CustomDynamicsWorld::internalSingleStepSimulation(btScalar timeStep)
 {
     // TODO: Enable this? Don't think it's so important for our purposes here though.
@@ -92,55 +154,87 @@ void CustomDynamicsWorld::integrateConstrainedBodiesWithCustomPhysics(btScalar t
         btRigidBody* body_k = &c->getRigidBodyB();
         btMatrix3x3 R_j, R_k; // rotation matrices
         const btVector3* r_j = &c->getPivotInA(); // attachement point for body j
-        const btVector3* r_k = &c->getPivotInA(); // attachement point for body k
+        const btVector3* r_k = &c->getPivotInB(); // attachement point for body k
         const btMatrix3x3 I = btMatrix3x3::getIdentity();
-        btVector3 u_j = body_j->getLinearVelocity();
-        btVector3 u_k = body_k->getLinearVelocity();
         // 2. Until convergence or maximum number of iterations:
         for (int i = 0; i < getConstraintIterations(); i++){
-            // Compute Si for the system of the two rigid bodies constrained only by the current constraint in isolation
+            // 2.1 Compute Si for the system of the two rigid bodies constrained only by the current constraint in isolation
+            //  2.1.1 Compute constraint velocity map G
+            //  2.1.2 getting mass matrix M (or rather M^{-1})
+            //  2.1.3 compute S
             btMatrix3x3 R_j = body_j->getWorldTransform().getBasis();
             btMatrix3x3 R_k = body_k->getWorldTransform().getBasis();
 
-            //auto G = (I, - (R_j * *r_j), I * -1, (R_k * *r_k)); 
-            auto G = I; // TODO: replace I by actual G computation
+            // 2.1.1
+            btVector3 v1,v2,v3;
+            (R_j * *r_j).getSkewSymmetricMatrix(&v1,&v2,&v3);
+            btMatrix3x3 K_j = btMatrix3x3(v1,v2,v3);
+            (R_k * *r_k).getSkewSymmetricMatrix(&v1,&v2,&v3);
+            btMatrix3x3 K_k = btMatrix3x3(v1,v2,v3);
+            btMatrix3x12 G = {I,  K_j * -1, I * -1, K_k}; 
+            btMatrix12x3 G_transpose;
+            transposeConstraintMap(G, G_transpose);
 
-            // NOTE: CHAT GPT und so...
-            auto inv_mass_j = body_j->getInvMass();
-            auto inv_mass_k = body_k->getInvMass();
-            auto inv_total_mass = inv_mass_j + inv_mass_k;
-            auto inv_inertia_j = body_j->getInvInertiaTensorWorld();
-            auto inv_inertia_k = body_k->getInvInertiaTensorWorld();
-            auto inv_total_inertia = inv_inertia_j + inv_inertia_k;
-            auto M = inv_total_inertia.inverse() + I * inv_total_mass; // mass matrix
+            // 2.1.2
+            btMatrix3x3 e; // null matrix
+            btMatrix3x3 mI_j = I * body_j->getMass();
+            btMatrix3x3 mI_k = I * body_k->getMass();
+            btMatrix3x3 tensor_j = body_j->getInvInertiaTensorWorld().inverse();
+            btMatrix3x3 tensor_k = body_k->getInvInertiaTensorWorld().inverse();
+            // the block-diagonal matrix M = diag(Mj,Mk) // see crash_course.pdf 2.2 end, page 14
+            btMatrix12x12 M_inv = {
+                { mI_j, e, e, e},
+                { e, tensor_j, e, e},
+                { e, e, mI_k, e},
+                { e, e, e, tensor_k}
+            }; // mass matrix
+            inverseDiagBlock3x3(M_inv);
 
-            auto S = G * M.inverse() * G.transpose();
-            // Compute an impulse represented by ∆λ˜_i by ∆λ˜_i = S^{−1]_i(−Giu), where u = (u_j , u_k).
-            btVector3 impulse_j = S.inverse() * (G * -1 * u_j);
-            btVector3 impulse_k = S.inverse() * (G * -1 * u_k);
-            // Apply the impulse by updating the velocities of rigid bodies j and k, i.e. u <- u + M^{-1}G^T_i ∆λ˜
-            u_j += M.inverse() * G.transpose() * impulse_j;
-            u_k += M.inverse() * G.transpose() * impulse_k;
-            body_j->setLinearVelocity(u_j);
-            body_k->setLinearVelocity(u_k);
+            // 2.1.3           
+            btMatrix3x12 GM_inv;
+            multiply(G, M_inv, GM_inv);
+            auto S = multiply(GM_inv, G_transpose);
+
+            // 2.2 Compute an impulse represented by ∆λ˜_i by ∆λ˜_i = S^{−1]_i(−Giu), where u = (u_j , u_k).
+            btVector12 u = {body_j->getLinearVelocity(), body_j->getAngularVelocity(), body_k->getLinearVelocity(), body_k->getAngularVelocity()};
+            btMatrix3x12 negG;
+            multiply(G, -1, negG);
+            btVector3 ndC;
+            multiply(negG, u, ndC);
+            btVector3 impulse = S.inverse() * ndC;
+
+            // 2.3 Apply the impulse by updating the velocities of rigid bodies j and k, i.e. u <- u + M^{-1}G^T_i ∆λ˜
+            btMatrix12x3 M_invG_transpose;
+            multiply(M_inv, G_transpose, M_invG_transpose);
+            btMatrix12x3 u;
+            multiply(M_invG_transpose, impulse, u);
+
+            body_j->setLinearVelocity(body_j->getLinearVelocity() + u[0]);
+            body_j->setAngularVelocity(body_j->getAngularVelocity() + u[1]);
+            body_k->setLinearVelocity(body_k->getLinearVelocity() + u[2]);
+            body_k->setAngularVelocity(body_k->getAngularVelocity() + u[3]);
         }
         // 3. Update positions by steps 3.1 and 3.2 (velocities are already up-to-date).
         // 3.1 Compute new positions z^{n+1} = z^n + ∆t H u^{n+1}  NOTE: (in practice: use quaternion update like before)
-        btVector3 z_j = body_j->getCenterOfMassPosition();
-        btVector3 z_k = body_k->getCenterOfMassPosition();
-        auto H = I;// TODO: replace I by actual H computation
-        z_j += H * u_j * timeStep;
-        z_k += H * u_k * timeStep;
+        btVector3 x_j = body_j->getCenterOfMassPosition();
+        x_j += timeStep * body_j->getLinearVelocity();
+        btVector3 x_k = body_k->getCenterOfMassPosition();
+        x_k += timeStep * body_k->getLinearVelocity();
+
+        btVector3 omega_j = body_j->getAngularVelocity();
+        btQuaternion q_j = body_j->getOrientation();
+        //q_j += timeStep *  btQuaternion(omega_j.x(), omega_j.y(), omega_j.z(), 0);
+        btVector3 omega_k = body_k->getAngularVelocity();
+        btQuaternion q_k = body_k->getOrientation();
+        //q_k += timeStep *  btQuaternion(omega_k.x(), omega_k.y(), omega_k.z(), 0);
 
         // 3.2 Normalize quaternions to obtain final rotational state (avoids drift from unit property)
-        btQuaternion q_j = body_j->getOrientation();
-        btQuaternion q_k = body_k->getOrientation();
         q_j.safeNormalize();
         q_k.safeNormalize();
 
         // finally, update positions
-        body_j->setCenterOfMassTransform(btTransform(q_j, z_j));
-        body_k->setCenterOfMassTransform(btTransform(q_k, z_k));
+        body_j->setCenterOfMassTransform(btTransform(q_j, x_j));
+        body_k->setCenterOfMassTransform(btTransform(q_k, x_k));
     }
 
     // When looping over your constraints, you can use getConstraintIterations() to obtain the number of
