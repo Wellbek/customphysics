@@ -200,7 +200,6 @@ void CustomDynamicsWorld::integrateConstrainedBodiesWithCustomPhysics(btScalar t
     for (auto c : point_constraints){
         btRigidBody* body_j = &c->getRigidBodyA();
         btRigidBody* body_k = &c->getRigidBodyB();
-        btMatrix3x3 R_j, R_k; // rotation matrices
         const btVector3* r_j = &c->getPivotInA(); // attachement point for body j
         const btVector3* r_k = &c->getPivotInB(); // attachement point for body k
         const btMatrix3x3 I = btMatrix3x3::getIdentity();
@@ -210,7 +209,9 @@ void CustomDynamicsWorld::integrateConstrainedBodiesWithCustomPhysics(btScalar t
             //  2.1.1 Compute constraint velocity map G
             //  2.1.2 getting mass matrix M (or rather M^{-1})
             //  2.1.3 compute S
-            btMatrix3x3 R_j = body_j->getWorldTransform().getBasis();
+
+            // rotation matrices
+            btMatrix3x3 R_j = body_j->getWorldTransform().getBasis(); 
             btMatrix3x3 R_k = body_k->getWorldTransform().getBasis();
 
             // 2.1.1
