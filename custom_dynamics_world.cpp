@@ -199,13 +199,14 @@ void printMatrix(const btMatrix12x12& matrix, char name) {
         }
     }
 }
-/*
-void printMatrix(const btMatrix12x3& matrix, char name) {
-    std::cout << name << ":"; 
-    for (int row = 0; row < 4; row++) {
-        printMatrix(matrix[row], ' ');
-    }
-}*/
+
+void printQuat(const btQuaternion quat, char name) {
+    std::cout << name << ": ("; 
+    std::cout << std::dec << quat.w() << ", ";
+    std::cout << std::dec << quat.x() << ", ";
+    std::cout << std::dec << quat.y() << ", ";
+    std::cout << std::dec << quat.z() << ")\n";
+}
 
 void CustomDynamicsWorld::integrateConstrainedBodiesWithCustomPhysics(btScalar timeStep) {
     // We typically perform collision detection at the beginning of the step
@@ -223,6 +224,7 @@ void CustomDynamicsWorld::integrateConstrainedBodiesWithCustomPhysics(btScalar t
         //body->setAngularVelocity(body->getAngularVelocity() + body->getInvInertiaTensorWorld() * timeStep * (body->getTotalTorque() - body->getAngularVelocity().cross(body->getInvInertiaTensorWorld().inverse() * body->getAngularVelocity())));
         x = x + timeStep * body->getLinearVelocity();
         q = q + 1/2 * timeStep * body->getAngularVelocity() * q;
+        //printQuat(q, 'q');
         body->applyGravity();
         body->setCenterOfMassTransform(btTransform(q, x));
     }
@@ -335,13 +337,16 @@ void CustomDynamicsWorld::integrateConstrainedBodiesWithCustomPhysics(btScalar t
         x_k += timeStep * body_k.getLinearVelocity();
 
         btVector3 omega_j = body_j.getAngularVelocity();
-        //printVector(omega_j, 'j');
+        //printVector(omega_j, 'w');
         btQuaternion q_j = body_j.getOrientation();
-        q_j +=  1/2 * timeStep * omega_j * q_j;
+        //q_j +=  1/2 * timeStep * omega_j * q_j;
+        //q_j = btQuaternion(1,2,3,4);
+        q_j += btQuaternion(omega_j.x(), omega_j.y(), omega_j.z(), 0) * timeStep * btScalar(0.5f);
+        //printQuat(q_j, 'q');
         btVector3 omega_k = body_k.getAngularVelocity();
         //printVector(omega_j, 'k');
         btQuaternion q_k = body_k.getOrientation();
-        q_k += 1/2 * timeStep * omega_k * q_k;
+        q_k += btQuaternion(omega_k.x(), omega_k.y(), omega_k.z(), 0) * timeStep * btScalar(0.5f);
 
         // 3.2 Normalize quaternions to obtain final rotational state (avoids drift from unit property)
         q_j.safeNormalize();
