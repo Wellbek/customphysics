@@ -220,7 +220,7 @@ void CustomDynamicsWorld::integrateConstrainedBodiesWithCustomPhysics(btScalar t
         auto x = body->getCenterOfMassPosition();
         auto q = body->getOrientation();
         body->setLinearVelocity(body->getLinearVelocity() + timeStep * body->getInvMass() * body->getTotalForce());
-        // body->setAngularVelocity(body->getAngularVelocity() + body->getInvInertiaTensorWorld());
+        //body->setAngularVelocity(body->getAngularVelocity() + body->getInvInertiaTensorWorld() * timeStep * (body->getTotalTorque() - body->getAngularVelocity().cross(body->getInvInertiaTensorWorld().inverse() * body->getAngularVelocity())));
         x = x + timeStep * body->getLinearVelocity();
         q = q + 1/2 * timeStep * body->getAngularVelocity() * q;
         body->applyGravity();
@@ -241,10 +241,10 @@ void CustomDynamicsWorld::integrateConstrainedBodiesWithCustomPhysics(btScalar t
     // sequential impulses method:
     // 1. Update velocities of rigid bodies by applying external forces. (see above)
     for (auto c : point_constraints){
-        btRigidBody body_j = c->getRigidBodyA();
-        btRigidBody body_k = c->getRigidBodyB();
-        const btVector3* r_j = &c->getPivotInA(); // attachement point for body j
-        const btVector3* r_k = &c->getPivotInB(); // attachement point for body k
+        btRigidBody& body_j = c->getRigidBodyA();
+        btRigidBody& body_k = c->getRigidBodyB();
+        const btVector3& r_j = c->getPivotInA(); // attachement point for body j
+        const btVector3& r_k = c->getPivotInB(); // attachement point for body k
         const btMatrix3x3 I = btMatrix3x3::getIdentity();
         // 2. Until convergence or maximum number of iterations:
         for (int i = 0; i < getConstraintIterations(); i++){
@@ -252,19 +252,20 @@ void CustomDynamicsWorld::integrateConstrainedBodiesWithCustomPhysics(btScalar t
             //  2.1.1 Compute constraint velocity map G
             //  2.1.2 getting mass matrix M (or rather M^{-1})
             //  2.1.3 compute S
-            btMatrix3x3 R_j = (body_j).getWorldTransform().getBasis();
-            btMatrix3x3 R_k = (body_k).getWorldTransform().getBasis();
+
+            btMatrix3x3 R_j = body_j.getWorldTransform().getBasis();
+            btMatrix3x3 R_k = body_k.getWorldTransform().getBasis();
             //printMatrix(R_j);
 
             // 2.1.1
             btVector3 v1,v2,v3;
-            (R_j * *r_j).getSkewSymmetricMatrix(&v1,&v2,&v3);
+            (R_j * r_j).getSkewSymmetricMatrix(&v1,&v2,&v3);
             //printVector(*r_j);
             //printVector(R_j * *r_j);
             //printVector(v1, 'x'); printVector(v2, 'y'); printVector(v3, 'z');
             btMatrix3x3 K_j = btMatrix3x3(v1,v2,v3);
             //printMatrix(K_j, 'K');
-            (R_k * *r_k).getSkewSymmetricMatrix(&v1,&v2,&v3);
+            (R_k * r_k).getSkewSymmetricMatrix(&v1,&v2,&v3);
             btMatrix3x3 K_k = btMatrix3x3(v1,v2,v3);
             //btMatrix3x12 G = {I,  K_j * -1, I * -1, K_k}; 
             btMatrix3x12 G;
@@ -321,10 +322,10 @@ void CustomDynamicsWorld::integrateConstrainedBodiesWithCustomPhysics(btScalar t
             multiply(M_inv, G_transpose, M_invG_transpose);
             multiply(M_invG_transpose, impulse, u);
 
-            c->getRigidBodyA().setLinearVelocity(body_j.getLinearVelocity() + u[0]);
-            c->getRigidBodyA().setAngularVelocity(body_j.getAngularVelocity() + u[1]);
-            c->getRigidBodyB().setLinearVelocity(body_k.getLinearVelocity() + u[2]);
-            c->getRigidBodyB().setAngularVelocity(body_k.getAngularVelocity() + u[3]);
+            body_j.setLinearVelocity(body_j.getLinearVelocity() + u[0]);
+            body_j.setAngularVelocity(body_j.getAngularVelocity() + u[1]);
+            body_k.setLinearVelocity(body_k.getLinearVelocity() + u[2]);
+            body_k.setAngularVelocity(body_k.getAngularVelocity() + u[3]);
         }
         // 3. Update positions by steps 3.1 and 3.2 (velocities are already up-to-date).
         // 3.1 Compute new positions z^{n+1} = z^n + ∆t H u^{n+1}  NOTE: (in practice: use quaternion update like before)
@@ -333,13 +334,14 @@ void CustomDynamicsWorld::integrateConstrainedBodiesWithCustomPhysics(btScalar t
         btVector3 x_k = body_k.getCenterOfMassPosition();
         x_k += timeStep * body_k.getLinearVelocity();
 
-        // TODO update rotation
         btVector3 omega_j = body_j.getAngularVelocity();
+        //printVector(omega_j, 'j');
         btQuaternion q_j = body_j.getOrientation();
-        //q_j += timeStep *  btQuaternion(omega_j.x(), omega_j.y(), omega_j.z(), 0);
+        q_j +=  1/2 * timeStep * omega_j * q_j;
         btVector3 omega_k = body_k.getAngularVelocity();
+        //printVector(omega_j, 'k');
         btQuaternion q_k = body_k.getOrientation();
-        //q_k += timeStep *  btQuaternion(omega_k.x(), omega_k.y(), omega_k.z(), 0);
+        q_k += 1/2 * timeStep * omega_k * q_k;
 
         // 3.2 Normalize quaternions to obtain final rotational state (avoids drift from unit property)
         q_j.safeNormalize();
