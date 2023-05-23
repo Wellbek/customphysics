@@ -12,8 +12,6 @@ typedef btMatrix3x3 btMatrix3x12[4];
 typedef btMatrix3x3 btMatrix12x3[4];
 typedef btVector3 btVector12[4];
 
-const btScalar gamma = 1.0f;
-
 #pragma region Matrix_Operations
 
 // for a diagonal matrix consisting of blocks with each block being invertible, the inverse of the matrix is given by the inverse of each block matrix
@@ -320,13 +318,12 @@ void sequentialImpulses(std::vector<btPoint2PointConstraint *>& constraints, int
             btVector3 ndC;
             multiply(negG, u, ndC);
             
-            //btVector3 C = r_j-r_k;
-            //printVector(C, 'c');
+            btVector3 C = (body_j.getCenterOfMassPosition() + R_j*r_j)-(body_k.getCenterOfMassPosition() + R_k*r_k);
             
+            btVector3 CndC = -0.1*(C)*(1/timeStep) + ndC;
             btVector3 impulse;
             if(S.determinant() != 0){
-                //impulse = S.inverse() * (-gamma * C * (1/timeStep) - ndC);
-                impulse = S.inverse() * ndC;
+                impulse = S.inverse() * CndC;
             }else{
                 impulse = {0, 0, 0};
             }
