@@ -1,12 +1,5 @@
 #include "custom_dynamics_world.h"
 
-#include <BulletDynamics/ConstraintSolver/btPoint2PointConstraint.h>
-
-#include <vector>
-#include <iostream>
-#include <string>
-#include <unordered_set>
-
 typedef btMatrix3x3 btMatrix12x12[4][4];
 typedef btMatrix3x3 btMatrix3x12[4];
 typedef btMatrix3x3 btMatrix12x3[4];
@@ -256,9 +249,9 @@ void printQuat(const btQuaternion quat, char name) {
         3.1 Compute new positions z^{n+1} = z^n + ∆t H u^{n+1}  NOTE: (in practice: use quaternion update like before)
         3.2 Normalize quaternions to obtain final rotational state (avoids drift from unit property)
         3.3 Update Transform) */
-void sequentialImpulses(std::vector<btPoint2PointConstraint *>& constraints, int iterations, btScalar timeStep){
+void CustomDynamicsWorld::sequentialImpulses(std::vector<btPoint2PointConstraint *>& constraints, btScalar timeStep){
     // 2
-    for (int i = 0; i < iterations; i++){  
+    for (int i = 0; i < getConstraintIterations(); i++){  
         for (auto c : constraints){
             constrainedBodies.insert(&c->getRigidBodyA());
             constrainedBodies.insert(&c->getRigidBodyB());
@@ -323,8 +316,8 @@ void sequentialImpulses(std::vector<btPoint2PointConstraint *>& constraints, int
             multiply(negG, u, ndC);
             
             btVector3 C = (body_j.getCenterOfMassPosition() + R_j*r_j)-(body_k.getCenterOfMassPosition() + R_k*r_k);
-            
-            btVector3 target_veclotiy = -0.1*(C)*(1/timeStep) + ndC;
+
+            btVector3 target_veclotiy = (-getGamma())*C*(1/timeStep) + ndC;
             btVector3 impulse;
             if(S.determinant() != 0){
                 impulse = S.inverse() * target_veclotiy;
@@ -366,7 +359,7 @@ void CustomDynamicsWorld::integrateConstrainedBodiesWithCustomPhysics(btScalar t
         }
     }
  
-    sequentialImpulses(point_constraints, getConstraintIterations(), timeStep);
+    sequentialImpulses(point_constraints, timeStep);
 
     for (auto body : bodies)
     {

@@ -57,6 +57,10 @@ void register_customphysics_types() {
 	GLOBAL_DEF("physics/customphysics/constraint_iterations", 10);
 	ProjectSettings::get_singleton()->set_custom_property_info("physics/customphysics/constraint_iterations",
 			PropertyInfo(Variant::INT, "physics/customphysics/constraint_iterations"));
+
+	GLOBAL_DEF("physics/customphysics/gamma", 1.0f);
+	ProjectSettings::get_singleton()->set_custom_property_info("physics/customphysics/gamma",
+			PropertyInfo(Variant::REAL, "physics/customphysics/gamma"));
 #endif
 }
 

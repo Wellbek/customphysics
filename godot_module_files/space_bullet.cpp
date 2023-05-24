@@ -617,7 +617,9 @@ void SpaceCustom::create_empty_world(bool p_create_soft_world) {
 	if (p_create_soft_world) {
 		auto custom_world = new (world_mem) CustomDynamicsWorld(dispatcher, broadphase, solver, collisionConfiguration);
 		const int constraintIters = ProjectSettings::get_singleton()->get("physics/customphysics/constraint_iterations");
+		const float gamma = ProjectSettings::get_singleton()->get("physics/customphysics/gamma");
 		custom_world->setConstraintIterations(constraintIters);
+		custom_world->setGamma(gamma);
 
 		dynamicsWorld = custom_world;
 		soft_body_world_info = bulletnew(btSoftBodyWorldInfo);
