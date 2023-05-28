@@ -7,7 +7,6 @@
 #include <vector>
 #include <iostream>
 #include <string>
-#include <unordered_set>
 
 class CustomDynamicsWorld : public btSoftRigidDynamicsWorld {
 private:

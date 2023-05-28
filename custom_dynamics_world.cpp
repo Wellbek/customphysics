@@ -5,8 +5,6 @@ typedef btMatrix3x3 btMatrix3x12[4];
 typedef btMatrix3x3 btMatrix12x3[4];
 typedef btVector3 btVector12[4];
 
-// lookup time of O(1) and duplicates ignored
-std::unordered_set<btRigidBody*> constrainedBodies;
 
 #pragma region Matrix_Operations
 
@@ -234,7 +232,7 @@ void printQuat(const btQuaternion quat, char name) {
 #pragma endregion Prints
 
 /* sequential impulses method:
-    (1. Update velocities of rigid bodies by applying external forces (i.e. set their velocity to u = u^p))
+    (1. Update velocities of rigid bodies by applying external forces (i.e. set their velocity to u = u^p)) happens earlier
     2. Until convergence or maximum number of iterations:
         2.1 Foreach Constraint i: Compute Si for the system of the two rigid bodies constrained only by the current constraint in isolation
             2.1.1 Compute constraint velocity map G
@@ -242,7 +240,7 @@ void printQuat(const btQuaternion quat, char name) {
             2.1.3 compute S
         2.2 Compute an impulse represented by ∆λ˜_i by ∆λ˜_i = S^{−1]_i(−Giu), where u = (u_j , u_k).
         2.3 Apply the impulse by updating the velocities of rigid bodies j and k, i.e. u <- u^p + M^{-1}G^T_i ∆λ˜
-            2.3.1 compute u^p = u^n + ∆t  M−1 f^{ext}
+            (2.3.1 compute u^p = u^n + ∆t  M−1 f^{ext})
             2.3.2 compute M^{-1}G^T_i ∆λ
             2.3.3 compute new velocity u
     (3. Update positions by steps 3.1 and 3.2 (velocities are already up-to-date).
@@ -250,11 +248,10 @@ void printQuat(const btQuaternion quat, char name) {
         3.2 Normalize quaternions to obtain final rotational state (avoids drift from unit property)
         3.3 Update Transform) */
 void CustomDynamicsWorld::sequentialImpulses(std::vector<btPoint2PointConstraint *>& constraints, btScalar timeStep){
+    
     // 2
     for (int i = 0; i < getConstraintIterations(); i++){  
         for (auto c : constraints){
-            constrainedBodies.insert(&c->getRigidBodyA());
-            constrainedBodies.insert(&c->getRigidBodyB());
 
             btRigidBody& body_j = c->getRigidBodyA();
             btRigidBody& body_k = c->getRigidBodyB();
@@ -299,16 +296,6 @@ void CustomDynamicsWorld::sequentialImpulses(std::vector<btPoint2PointConstraint
 
             btVector12 u = {body_j.getLinearVelocity(), body_j.getAngularVelocity(), body_k.getLinearVelocity(), body_k.getAngularVelocity()};
 
-            // 2.3 
-            // 2.3.1
-            btVector12 deltaM_invf;
-            btVector12 forceExt = { body_j.getTotalForce(), body_j.getTotalTorque(), body_k.getTotalForce(), body_k.getTotalTorque() };
-            multiply(M_inv, forceExt, deltaM_invf);
-            multiply(deltaM_invf, timeStep, deltaM_invf);
-            for (int i = 0; i < 4; i++){
-                u[i] += deltaM_invf[i];
-            }
-
             //2.2
             btMatrix3x12 negG;
             multiply(G, -1, negG);
@@ -325,6 +312,7 @@ void CustomDynamicsWorld::sequentialImpulses(std::vector<btPoint2PointConstraint
                 impulse = {0, 0, 0};
             }
 
+            // 2.3
             // 2.3.2
             btMatrix12x3 M_invG_transpose;
             btVector12 M_invG_transposeDeltaLambda;
@@ -348,6 +336,12 @@ void CustomDynamicsWorld::integrateConstrainedBodiesWithCustomPhysics(btScalar t
     // collision objects which are not rigid bodies.
     auto bodies = collectBodies(getCollisionObjectArray());
 
+    //Update velocity for all bodies (for constrained bodies we calculate u_p here)
+    for(auto body : bodies){
+        body->setLinearVelocity(body->getLinearVelocity() + timeStep * body->getInvMass() * body->getTotalForce());
+        body->setAngularVelocity(body->getAngularVelocity() + body->getInvInertiaTensorWorld() * timeStep * body->getTotalTorque());
+    }
+
     // filter out the btPoint2PointConstraint instances:
     const auto num_constraints = this->getNumConstraints();
     std::vector<btPoint2PointConstraint *> point_constraints;
@@ -366,11 +360,7 @@ void CustomDynamicsWorld::integrateConstrainedBodiesWithCustomPhysics(btScalar t
         auto x = body->getCenterOfMassPosition();
         auto q = body->getOrientation();
         body->applyGravity();
-        if (constrainedBodies.find(body) == constrainedBodies.end()){
-            // only set velocities if not a constrained body. (Velocities of constrained bodies are set in sequentialImpulses()!)
-            body->setLinearVelocity(body->getLinearVelocity() + timeStep * body->getInvMass() * body->getTotalForce());
-            //body->setAngularVelocity(body->getAngularVelocity() + body->getInvInertiaTensorWorld() * timeStep * (body->getTotalTorque() - body->getAngularVelocity().cross(body->getInvInertiaTensorWorld().inverse() * body->getAngularVelocity())));
-        }
+        
         x += timeStep * body->getLinearVelocity();
         btVector3 omega = body->getAngularVelocity();
         q += btQuaternion(omega.x(), omega.y(), omega.z(), 0) * q * timeStep * btScalar(0.5f);
