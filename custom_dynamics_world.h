@@ -1,6 +1,7 @@
 #ifndef CUSTOM_DYNAMICS_WORLD_H
 #define CUSTOM_DYNAMICS_WORLD_H
 
+#include "cpMatrix.h"
 #include <BulletSoftBody/btSoftRigidDynamicsWorld.h>
 #include <BulletDynamics/ConstraintSolver/btPoint2PointConstraint.h>
 

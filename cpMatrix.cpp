@@ -1,57 +1,39 @@
-#include <vector>
-#include <iostream>
-#include <string>
+#include "cpMatrix.h"
 
-#include <LinearMath/btMatrix3x3.h>
+using std::cout;
+using std::vector;
+using std::string;
+using std::endl;
+using std::dec;
 
-class cpMatrix{
-    private:
-        int n, m;
-        std::vector<double> values = {};
-    public:
-        cpMatrix(int,int);
-
-        int getN(){return n;};
-        int getM(){return m;};
-
-        int initializeWithBtMatrixArray(btMatrix3x3[],int);
-        int initializeBlock(btMatrix3x3,int,int);
-
-        btMatrix3x3 toBtMatrix3x3();
-
-        double& operator()(int i, int j);
-        double operator()(int i, int j) const;
-
-        //cpMatrix& operator=(const cpMatrix&);
-        cpMatrix operator+(const cpMatrix&);
-        cpMatrix operator-(const cpMatrix&);
-        cpMatrix operator*(const cpMatrix&);
-        cpMatrix operator*(const double&);
-        cpMatrix operator+=(const cpMatrix&);
-        cpMatrix operator-=(const cpMatrix&);
-        cpMatrix operator*=(const cpMatrix&);
-
-        void print(std::string);
-
-};
-
-void cpMatrix::print(std::string name){
-    std::cout << "Matrix " << name << ":" << std::endl;
+void cpMatrix::print(string name){
+    cout << "Matrix " << name << ":" << endl;
     for(int i = 0; i < n; i++){
         for(int j = 0; j < m; j++){
-            std::cout << std::dec << (*this)(i,j) << " , ";
+            cout << dec << (*this)(i,j) << " , ";
         }
-        std::cout << std::endl;
+        cout << endl;
     }
-    std::cout << std::endl;
+    cout << endl;
 }
 
 cpMatrix::cpMatrix(int _n, int _m){
     n = _n;
     m = _m;
-    for(int i = 0; i < n+m; i++){
+    for(int i = 0; i < n*m; i++){
         values.push_back(0);
     }
+}
+
+/*Returns the transposed Matrix*/
+cpMatrix cpMatrix::transpose(){
+    cpMatrix res(m,n);
+    for (int i = 0; i < m; i++){
+        for (int j = 0; j < n; j++){
+            res(i,j) = (*this)(j,i);
+        }
+    }
+    return res;
 }
 
 /*turns 3x3 cpMatrix to btMatrix3x3
@@ -63,6 +45,17 @@ btMatrix3x3 cpMatrix::toBtMatrix3x3(){
         for(int j = 0; j < 3; j++){
             res[i][j] = (*this)(i,j);
         }
+    }
+    return res;
+}
+
+/*turns 3x1 cpMatrix to btVector3
+if the format is not 3x1 it will return (0,0,0)*/
+btVector3 cpMatrix::toBtVector3(){
+    btVector3 res = {0,0,0};
+    if(n != 3 || m != 1) return res;
+    for(int i = 0; i < 3; i++){
+        res[i] = (*this)(i,0);
     }
     return res;
 }
@@ -101,7 +94,8 @@ int cpMatrix::initializeWithBtMatrixArray(btMatrix3x3 blocks[], int size){
     return 0;
 }
 
-/*initializes a block inside a matrix, can start anywhere not just in steps of 3*/
+/*initializes a block inside a matrix, can start anywhere not just in steps of 3
+returns -1 if failed*/
 int cpMatrix::initializeBlock(btMatrix3x3 block, int start_row, int start_col){
     if(start_row+3 <= n && start_col+3 <= m){
         for(int i = 0; i < 3; i++){
@@ -116,12 +110,30 @@ int cpMatrix::initializeBlock(btMatrix3x3 block, int start_row, int start_col){
     return 0;
 }
 
+btVector3 cpMatrix::getBtVector3(int start_row, int col){
+    btVector3 res = {0,0,0};
+    if(start_row+3 > n || col >= m) return res;
+    res.setX((*this)(start_row,col));
+    res.setY((*this)(start_row+1,col));
+    res.setZ((*this)(start_row+2,col));
+    return res;
+}
+
+/*sets a 3x1 block inside a matrix given a btVector3 and starting row and column
+returns -1 if failed*/
+int cpMatrix::setWithBtVector3(btVector3 vec, int start_row, int col){
+    if(start_row+3 > n || col >= m) return -1;
+    (*this)(start_row, col) = vec.getX();
+    (*this)(start_row+1, col) = vec.getY();
+    (*this)(start_row+2, col) = vec.getZ();
+    return 0;
+}
 
 double& cpMatrix::operator()(int i, int j)
 {
     if(i >= n || j >= m){ 
-        std::cout << "Matrix operation failed; Out of bounds exception: i,n: " << 
-                    std::dec << i << " , " << std::dec << n << ";  j,m:" << std::dec << j << " , " << std::dec << m << std::endl; 
+        cout << "Matrix operation failed; Out of bounds exception: i,n: " << 
+                    dec << i << " , " << dec << n << ";  j,m:" << dec << j << " , " << dec << m << endl; 
     }
     return values[i * m + j];
 }
@@ -129,19 +141,19 @@ double& cpMatrix::operator()(int i, int j)
 double cpMatrix::operator()(int i, int j) const
 {
     if(i > n || j > m){ 
-        std::cout << "Matrix operation failed; Out of bounds exception: i,n: " << 
-                    std::dec << i << " , " << std::dec << n << ";  j,m:" << std::dec << j << " , " << std::dec << m << std::endl; 
+        cout << "Matrix operation failed; Out of bounds exception: i,n: " << 
+                    dec << i << " , " << dec << n << ";  j,m:" << dec << j << " , " << dec << m << endl; 
         return 0;
     }
     return values[i * m + j];
 }
 
-/*cpMatrix& cpMatrix::operator=(const cpMatrix& other){
-    n = other.n;
-    m = other.m;
-    values = other.values;
+cpMatrix& cpMatrix::operator=(const btVector3& other){
+    n = 3;
+    m = 1;
+    values = {other.getX(), other.getY(), other.getZ()};
     return *this;
-}*/
+}
 
 cpMatrix cpMatrix::operator+(const cpMatrix& other){
     if(n != other.n || m != other.m) return cpMatrix(0,0);
@@ -181,7 +193,7 @@ cpMatrix cpMatrix::operator-(const cpMatrix& other){
 }
 
 cpMatrix cpMatrix::operator*(const cpMatrix& other){
-    //std::cout << std::dec << m << " " << other.n;
+    //cout << dec << m << " " << other.n;
     if(m != other.n) return cpMatrix(0,0);
     cpMatrix res(n,other.m);
     for(int i = 0; i < n; i++){
@@ -198,7 +210,7 @@ cpMatrix cpMatrix::operator*(const double& scalar){
     cpMatrix res(n,m);
     for(int i = 0; i < n; i++){
         for(int j = 0; j < m; j++){
-            res(i,j) *= scalar;
+            res(i,j) = (*this)(i,j) * scalar;
         }
     }
     return res;
@@ -206,14 +218,13 @@ cpMatrix cpMatrix::operator*(const double& scalar){
 
 /*if you want to test this class, go in your terminal to /modules and compile it with:
 g++ -o cpMatrix customphysics/cpMatrix.cpp -I ../thirdparty/bullet*/
-int main(){
+/*int main(){
     btMatrix3x3 I = btMatrix3x3::getIdentity();
 
     cpMatrix m1(3,3);
     m1(0,0) = 1;
     m1(1,2) = 12;
     m1(2,0) = 3;
-    m1.initializeBlock(I, 0, 0);
     m1.print("m1");
 
     cpMatrix m2(3,12);
@@ -223,8 +234,14 @@ int main(){
     m2.initializeWithBtMatrixArray(arr, 4);
     m2.print("m2");
 
-    //cpMatrix m3 = m1*m2;
-    (m1*m2).print("m3");
+    cpMatrix m3 = m1*m2;
+    m3.print("m3");
+
+    cpMatrix m4 = m2+m3;
+    m4.print("m4");
+
+    m4 -= m2;
+    m4.print("m5");
 
     return 0;
-}
+}*/

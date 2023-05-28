@@ -1,139 +1,7 @@
 #include "custom_dynamics_world.h"
 
-typedef btMatrix3x3 btMatrix12x12[4][4];
-typedef btMatrix3x3 btMatrix3x12[4];
-typedef btMatrix3x3 btMatrix12x3[4];
 typedef btVector3 btVector12[4];
 
-
-#pragma region Matrix_Operations
-
-// for a diagonal matrix consisting of blocks with each block being invertible, the inverse of the matrix is given by the inverse of each block matrix
-// https://en.wikipedia.org/wiki/Block_matrix
-void inverseDiagBlock3x3(btMatrix12x12& mat){
-    for (int i = 0; i < 4; i++) {
-        btMatrix3x3& block = mat[i][i];
-        block = block.inverse();
-    }
-}
-
-// transpose of each block + rearrangement of blocks (btMatrix3x12 -> btMatrix12x3)
-void transposeConstraintMap(const btMatrix3x12& mat, btMatrix12x3& res){
-    for (int i = 0; i < 4; i++) {
-        res[i] = mat[i].transpose();
-    }
-}
-
-#pragma region Matrix_Multiplications
-
-void multiply(const btMatrix3x12& mat1, const btMatrix12x3& mat2, btMatrix3x3& res){
-    int i,j,x;
-    for (i = 0; i < 3; i++) {
-        for (j = 0; j < 3; j++) {
-            res[i][j] = 0;
-            for (x = 0; x < 12; x++) {
-                res[i][j] += mat1[x%4][i][x%3] * mat2[x%4][x%3][j];
-            }
-        }
-    }
-}
-
-void multiply(const btMatrix12x3& mat1, const btMatrix3x3& mat2, btMatrix12x3& res){
-    int i,j,x;
-    for (i = 0; i < 12; i++) {
-        for (j = 0; j < 3; j++) {
-            res[i%4][i%3][j] = 0;
-            for (x = 0; x < 3; x++) {
-                res[i%4][i%3][j] += mat1[i%4][i%3][x] * mat2[x][j];
-            }
-        }
-    }
-}
-
-void multiply(const btMatrix3x3& mat1, const btMatrix3x12& mat2, btMatrix3x12& res){
-    int i,j,x;
-    for (i = 0; i < 3; i++) {
-        for (j = 0; j < 12; j++) {
-            res[j%4][i][j%3] = 0;
-            for (x = 0; x < 3; x++) {
-                res[j%4][i][j%3] += mat1[i][x] * mat2[j%4][x][j%3];
-            }
-        }
-    }
-}
-
-void multiply(const btMatrix3x12& mat1, const btMatrix12x12& mat2, btMatrix12x3& res){
-    int i,j,x;
-    for (i = 0; i < 3; i++) {
-        for (j = 0; j < 12; j++) {
-            res[j%4][i][j%3] = 0;
-            for (x = 0; x < 12; x++) {
-                res[j%4][i][j%3] += mat1[x%4][i][x%3] * mat2[x%4][j%4][x%3][j%3];
-            }
-        }
-    }
-}
-
-void multiply(const btMatrix12x12& mat1, const btMatrix12x3& mat2, btMatrix3x12& res){
-    int i,j,x;
-    for (i = 0; i < 12; i++) {
-        for (j = 0; j < 3; j++) {
-            res[i%4][i%3][j] = 0;
-            for (x = 0; x < 12; x++) {
-                res[i%4][i%3][j] += mat1[i%4][x%4][i%3][x%3] * mat2[x%4][x%3][j];
-            }
-        }
-    }
-}
-
-// TODO: Review pls
-void multiply(const btMatrix12x12& mat, const btVector12& vec, btVector12& res) {
-    int i,j,x;
-    for (i = 0; i < 12; i++) {
-        res[i%4][i%3] = 0;
-        for (x = 0; x < 12; x++) {
-            res[i%4][i%3] += mat[i%4][x%4][i%3][x%3] * vec[x%4][x%3];
-        }    
-    }
-}
-
-void multiply(const btVector12& vec, btScalar s, btVector12& res){
-    for (int i = 0; i < 4; i++){
-        res[i] = res[i] * s;
-    }
-}
-
-void multiply(const btMatrix3x12& mat, btScalar s, btMatrix3x12& res){
-    int i,j;
-    for (i = 0; i < 3; i++) {
-        for (j = 0; j < 12; j++) {
-            res[j%4][i][j%3] = mat[j%4][i][j%3]*s;
-        }
-    }
-}
-
-void multiply(const btMatrix3x12& mat, const btVector12& vec, btVector3& res){
-    int i,x;
-    for (i = 0; i < 3; i++) {
-        res[i] = 0;
-        for (x = 0; x < 12; x++) {
-            res[i] += mat[x%4][i][x%3] * vec[x%4][x%3];
-        }
-    }
-}
-
-void multiply(const btMatrix12x3& mat, const btVector3& vec, btVector12& res){
-    int i,x;
-    for (i = 0; i < 12; i++) {
-        res[i%4][i%3] = 0;
-        for (x = 0; x < 3; x++) {
-            res[i%4][i%3] += mat[i%4][i%3][x] * vec[x];
-        }
-    }
-}
-
-#pragma endregion Matrix_Multiplications
-#pragma endregion Matrix_Operations
 
 void CustomDynamicsWorld::internalSingleStepSimulation(btScalar timeStep)
 {
@@ -204,23 +72,6 @@ void printMatrix(const btMatrix3x3& matrix, char name) {
     }
 }
 
-
-void printMatrix(const btMatrix3x12& matrix, char name) {
-    std::cout << name << ":"; 
-    for(int i = 0; i < 4; i++){
-        printMatrix(matrix[i], ' ');
-    }
-}
-
-void printMatrix(const btMatrix12x12& matrix, char name) {
-    std::cout << name << ":"; 
-    for (int row = 0; row < 4; row++) {
-        for (int col = 0; col < 4; col++) {
-            printMatrix(matrix[row][col], ' ');
-        }
-    }
-}
-
 void printQuat(const btQuaternion quat, char name) {
     std::cout << name << ": ("; 
     std::cout << std::dec << quat.w() << ", ";
@@ -270,60 +121,55 @@ void CustomDynamicsWorld::sequentialImpulses(std::vector<btPoint2PointConstraint
             btMatrix3x3 K_j = btMatrix3x3(v1,v2,v3);
             (R_k * r_k).getSkewSymmetricMatrix(&v1,&v2,&v3);
             btMatrix3x3 K_k = btMatrix3x3(v1,v2,v3);
-            btMatrix3x12 G = {I,  K_j * -1, I * -1, K_k}; 
-            btMatrix12x3 G_transpose;
-            transposeConstraintMap(G, G_transpose);
-        
+            cpMatrix G(3,12);
+            G.initializeBlock(I, 0, 0);
+            G.initializeBlock(K_j*-1, 0, 3);
+            G.initializeBlock(I*-1, 0, 6);
+            G.initializeBlock(K_k, 0, 9);
+            cpMatrix G_transpose = G.transpose();
+
             // 2.1.2
             btMatrix3x3 e; // null matrix
             btMatrix3x3 mI_j = I * body_j.getInvMass();
             btMatrix3x3 mI_k = I * body_k.getInvMass();
             btMatrix3x3 tensor_j = body_j.getInvInertiaTensorWorld();
             btMatrix3x3 tensor_k = body_k.getInvInertiaTensorWorld();
-            // the block-diagonal matrix M = diag(Mj,Mk) // see crash_course.pdf 2.2 end, page 14
-            btMatrix12x12 M_inv = {
-                { mI_j, e, e, e},
-                { e, tensor_j, e, e},
-                { e, e, mI_k, e},
-                { e, e, e, tensor_k}
-            }; // inverse mass matrix
 
-            // 2.1.3           
-            btMatrix3x12 GM_inv;
-            multiply(G, M_inv, GM_inv);
-            btMatrix3x3 S;
-            multiply(GM_inv, G_transpose, S);
+            // the block-diagonal matrix M = diag(Mj,Mk) // see crash_course.pdf 2.2 end, page 14
+            cpMatrix M_inv(12,12); // inverse mass matrix
+            M_inv.initializeBlock(mI_j, 0, 0);
+            M_inv.initializeBlock(tensor_j, 3, 3);
+            M_inv.initializeBlock(mI_k, 6, 6);
+            M_inv.initializeBlock(tensor_k, 9, 9);
+
+            // 2.1.3
+            btMatrix3x3 S = (G * M_inv * G_transpose).toBtMatrix3x3();
 
             btVector12 u = {body_j.getLinearVelocity(), body_j.getAngularVelocity(), body_k.getLinearVelocity(), body_k.getAngularVelocity()};
+            cpMatrix u_mat(12,1);
+            for(int i = 0; i < 4; i++){
+                u_mat.setWithBtVector3(u[i], i*3, 0);
+            }
 
             //2.2
-            btMatrix3x12 negG;
-            multiply(G, -1, negG);
-            btVector3 ndC;
-            multiply(negG, u, ndC);
+            btVector3 ndC = (G * -1 * u_mat).toBtVector3();
             
             btVector3 C = (body_j.getCenterOfMassPosition() + R_j*r_j)-(body_k.getCenterOfMassPosition() + R_k*r_k);
 
             btVector3 target_veclotiy = (-getGamma())*C*(1/timeStep) + ndC;
-            btVector3 impulse;
+            cpMatrix impulse(3,1);
             if(S.determinant() != 0){
-                impulse = S.inverse() * target_veclotiy;
-            }else{
-                impulse = {0, 0, 0};
+                impulse.setWithBtVector3(S.inverse() * target_veclotiy, 0, 0);
             }
 
             // 2.3
             // 2.3.2
-            btMatrix12x3 M_invG_transpose;
-            btVector12 M_invG_transposeDeltaLambda;
-            multiply(M_inv, G_transpose, M_invG_transpose);
-            multiply(M_invG_transpose, impulse, M_invG_transposeDeltaLambda);
-
+            cpMatrix M_invG_transposeDeltaLambda = M_inv * G_transpose * impulse; // 12x1
             // 2.3.3
-            body_j.setLinearVelocity( u[0] + M_invG_transposeDeltaLambda[0]);
-            body_j.setAngularVelocity(u[1] + M_invG_transposeDeltaLambda[1]);
-            body_k.setLinearVelocity( u[2] + M_invG_transposeDeltaLambda[2]);
-            body_k.setAngularVelocity(u[3] + M_invG_transposeDeltaLambda[3]);
+            body_j.setLinearVelocity( u[0] + M_invG_transposeDeltaLambda.getBtVector3(0,0));
+            body_j.setAngularVelocity(u[1] + M_invG_transposeDeltaLambda.getBtVector3(3,0));
+            body_k.setLinearVelocity( u[2] + M_invG_transposeDeltaLambda.getBtVector3(6,0));
+            body_k.setAngularVelocity(u[3] + M_invG_transposeDeltaLambda.getBtVector3(9,0));
         }
     }
 }
