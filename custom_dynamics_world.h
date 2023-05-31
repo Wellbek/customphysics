@@ -32,7 +32,11 @@ public:
 protected:
     void internalSingleStepSimulation(btScalar timeStep) override;
 
-	void sequentialImpulses(std::vector<btPoint2PointConstraint *> &constraints, btScalar timeStep);
+	void sequentialImpulses(btScalar timeStep);
+
+	void point2PointConstraintCorrection(std::vector<btPoint2PointConstraint *> &constraints, btScalar timeStep);
+
+	void contactCorrection(std::vector<btPersistentManifold *> &constraints, btScalar timeStep);
 
 	//
 	void integrateConstrainedBodiesWithCustomPhysics(btScalar timeStep);

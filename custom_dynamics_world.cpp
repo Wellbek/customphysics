@@ -52,6 +52,15 @@ std::vector<btRigidBody *> collectBodies(btCollisionObjectArray & objects,
     return buffer;
 }
 
+std::vector<btPersistentManifold*> fetchManifolds (btDynamicsWorld& world){
+    const auto num_manifolds = world.getDispatcher()->getNumManifolds();
+    std::vector<btPersistentManifold*> manifolds;
+    for (int i = 0; i < num_manifolds; ++i) {
+        manifolds.push_back(world.getDispatcher()->getManifoldByIndexInternal(i));
+    }
+    return manifolds;
+}
+
 #pragma region Prints
 
 void printVector(const btVector3& vector, char name) {
@@ -83,57 +92,170 @@ void printQuat(const btQuaternion quat, char name) {
 #pragma endregion Prints
 
 /* sequential impulses method:
-    (1. Update velocities of rigid bodies by applying external forces (i.e. set their velocity to u = u^p)) happens earlier
     2. Until convergence or maximum number of iterations:
-        2.1 Foreach Constraint i: Compute Si for the system of the two rigid bodies constrained only by the current constraint in isolation
-            2.1.1 Compute constraint velocity map G
-            2.1.2 getting mass matrix M (or rather M^{-1})
-            2.1.3 compute S
-        2.2 Compute an impulse represented by ∆λ˜_i by ∆λ˜_i = S^{−1]_i(−Giu), where u = (u_j , u_k).
-        2.3 Apply the impulse by updating the velocities of rigid bodies j and k, i.e. u <- u^p + M^{-1}G^T_i ∆λ˜
-            (2.3.1 compute u^p = u^n + ∆t  M−1 f^{ext})
-            2.3.2 compute M^{-1}G^T_i ∆λ
-            2.3.3 compute new velocity u
-    (3. Update positions by steps 3.1 and 3.2 (velocities are already up-to-date).
-        3.1 Compute new positions z^{n+1} = z^n + ∆t H u^{n+1}  NOTE: (in practice: use quaternion update like before)
-        3.2 Normalize quaternions to obtain final rotational state (avoids drift from unit property)
-        3.3 Update Transform) */
-void CustomDynamicsWorld::sequentialImpulses(std::vector<btPoint2PointConstraint *>& constraints, btScalar timeStep){
-    
-    // 2
+        2.1 Apply correctional impulses for joints
+        2.2 Apply correctional impulses for contacts */
+void CustomDynamicsWorld::sequentialImpulses(btScalar timeStep){
+
+    // filter out the btPoint2PointConstraint instances:
+    const auto num_constraints = this->getNumConstraints();
+    std::vector<btPoint2PointConstraint *> point_constraints;
+
+    for (int i = 0; i < num_constraints; ++i){
+        auto c = this->getConstraint(i);
+        if(c->getConstraintType() == POINT2POINT_CONSTRAINT_TYPE){
+            point_constraints.push_back(dynamic_cast<btPoint2PointConstraint *>(c));
+        }
+    }
+
+    //fetch all contact Manifolds
+    auto manifolds = fetchManifolds(*this);
+
+    //2
     for (int i = 0; i < getConstraintIterations(); i++){  
-        for (auto c : constraints){
+        //2.1
+        point2PointConstraintCorrection(point_constraints, timeStep);
 
-            btRigidBody& body_j = c->getRigidBodyA();
-            btRigidBody& body_k = c->getRigidBodyB();
+        //2.2
+        contactCorrection(manifolds, timeStep);
+    }
+}
 
-            const btVector3& r_j = c->getPivotInA(); // attachement point for body j
-            const btVector3& r_k = c->getPivotInB(); // attachement point for body k
+/*2.1 Foreach Constraint i: Compute Si for the system of the two rigid bodies constrained only by the current constraint in isolation
+    2.1.1 Compute constraint velocity map G
+    2.1.2 getting mass matrix M (or rather M^{-1})
+    2.1.3 compute S
+2.2 Compute an impulse represented by ∆λ˜_i by ∆λ˜_i = S^{−1]_i(−Giu), where u = (u_j , u_k).
+2.3 Apply the impulse by updating the velocities of rigid bodies j and k, i.e. u <- u^p + M^{-1}G^T_i ∆λ˜
+    (2.3.1 compute u^p = u^n + ∆t  M−1 f^{ext})
+    2.3.2 compute M^{-1}G^T_i ∆λ
+    2.3.3 compute new velocity u*/
+void CustomDynamicsWorld::point2PointConstraintCorrection(std::vector<btPoint2PointConstraint *> &constraints, btScalar timeStep){
+    for (auto c : constraints){
+
+        btRigidBody& body_j = c->getRigidBodyA();
+        btRigidBody& body_k = c->getRigidBodyB();
+
+        const btVector3& r_j = c->getPivotInA(); // attachement point for body j
+        const btVector3& r_k = c->getPivotInB(); // attachement point for body k
+        const btMatrix3x3 I = btMatrix3x3::getIdentity();
+
+        // 2.1 
+        btMatrix3x3 R_j = body_j.getWorldTransform().getBasis();
+        btMatrix3x3 R_k = body_k.getWorldTransform().getBasis();
+
+        // 2.1.1
+        btVector3 v1,v2,v3;
+        (R_j * r_j).getSkewSymmetricMatrix(&v1,&v2,&v3);
+        btMatrix3x3 K_j = btMatrix3x3(v1,v2,v3);
+        (R_k * r_k).getSkewSymmetricMatrix(&v1,&v2,&v3);
+        btMatrix3x3 K_k = btMatrix3x3(v1,v2,v3);
+        cpMatrix G(3,12);
+        G.initializeBlock(I, 0, 0);
+        G.initializeBlock(K_j*-1, 0, 3);
+        G.initializeBlock(I*-1, 0, 6);
+        G.initializeBlock(K_k, 0, 9);
+        cpMatrix G_transpose = G.transpose();
+
+        // 2.1.2
+        btMatrix3x3 e; // null matrix
+        btMatrix3x3 mI_j = I * body_j.getInvMass();
+        btMatrix3x3 mI_k = I * body_k.getInvMass();
+        btMatrix3x3 tensor_j = body_j.getInvInertiaTensorWorld();
+        btMatrix3x3 tensor_k = body_k.getInvInertiaTensorWorld();
+
+        // the block-diagonal matrix M = diag(Mj,Mk) // see crash_course.pdf 2.2 end, page 14
+        cpMatrix M_inv(12,12); // inverse mass matrix
+        M_inv.initializeBlock(mI_j, 0, 0);
+        M_inv.initializeBlock(tensor_j, 3, 3);
+        M_inv.initializeBlock(mI_k, 6, 6);
+        M_inv.initializeBlock(tensor_k, 9, 9);
+
+        // 2.1.3
+        btMatrix3x3 S = (G * M_inv * G_transpose).toBtMatrix3x3();
+
+        btVector12 u = {body_j.getLinearVelocity(), body_j.getAngularVelocity(), body_k.getLinearVelocity(), body_k.getAngularVelocity()};
+        cpMatrix u_mat(12,1);
+        for(int i = 0; i < 4; i++){
+            u_mat.setWithBtVector3(u[i], i*3, 0);
+        }
+
+        //2.2
+        btVector3 ndC = (G * -1 * u_mat).toBtVector3();
+        
+        btVector3 C = (body_j.getCenterOfMassPosition() + R_j*r_j)-(body_k.getCenterOfMassPosition() + R_k*r_k);
+
+        btVector3 target_veclotiy = (-getGamma())*C*(1/timeStep) + ndC;
+        cpMatrix impulse(3,1);
+        if(S.determinant() != 0){
+            impulse.setWithBtVector3(S.inverse() * target_veclotiy, 0, 0);
+        }
+
+        // 2.3
+        // 2.3.2
+        cpMatrix M_invG_transposeDeltaLambda = M_inv * G_transpose * impulse; // 12x1
+        // 2.3.3
+        body_j.setLinearVelocity( u[0] + M_invG_transposeDeltaLambda.getBtVector3(0,0));
+        body_j.setAngularVelocity(u[1] + M_invG_transposeDeltaLambda.getBtVector3(3,0));
+        body_k.setLinearVelocity( u[2] + M_invG_transposeDeltaLambda.getBtVector3(6,0));
+        body_k.setAngularVelocity(u[3] + M_invG_transposeDeltaLambda.getBtVector3(9,0));
+    }
+}
+
+void CustomDynamicsWorld::contactCorrection(std::vector<btPersistentManifold *> &manifolds, btScalar timeStep){
+    auto num_manifolds = this->getDispatcher()->getNumManifolds();
+
+    for(size_t i = 0; i < num_manifolds; ++i){
+        auto manifold = manifolds[i];
+
+        // The const_cast is not nice, but apparently necessary
+        auto body_j = btRigidBody::upcast(const_cast<btCollisionObject *>(manifold->getBody0()));
+        auto body_k = btRigidBody::upcast(const_cast<btCollisionObject *>(manifold->getBody1()));
+    
+        const auto is_rigidJ = body_j != nullptr;
+        const auto is_rigidK = body_k != nullptr;
+        if(!is_rigidJ || !is_rigidK) {
+            //Only do contact handling when both bodies are Rigidbodies
+            continue;
+        }
+
+        const auto num_contacts = manifold->getNumContacts();
+        for(int c = 0; c < num_contacts; ++c){
+            auto& contact = manifold->getContactPoint(c);
+            const auto n = contact.m_normalWorldOnB;
+            const auto r_j = contact.m_localPointA;
+            const auto r_k = contact.m_localPointB;
+
+            //Needed Variables
+            cpMatrix n_cp(3,1);
+            n_cp.setWithBtVector3(n, 0, 0);
             const btMatrix3x3 I = btMatrix3x3::getIdentity();
+            btMatrix3x3 R_j = body_j->getWorldTransform().getBasis();
+            btMatrix3x3 R_k = body_k->getWorldTransform().getBasis();
 
-            // 2.1 
-            btMatrix3x3 R_j = body_j.getWorldTransform().getBasis();
-            btMatrix3x3 R_k = body_k.getWorldTransform().getBasis();
+            //Compute and apply delta_lambda etc. TODO
 
-            // 2.1.1
+            //Calculate G
             btVector3 v1,v2,v3;
             (R_j * r_j).getSkewSymmetricMatrix(&v1,&v2,&v3);
             btMatrix3x3 K_j = btMatrix3x3(v1,v2,v3);
             (R_k * r_k).getSkewSymmetricMatrix(&v1,&v2,&v3);
             btMatrix3x3 K_k = btMatrix3x3(v1,v2,v3);
-            cpMatrix G(3,12);
-            G.initializeBlock(I, 0, 0);
-            G.initializeBlock(K_j*-1, 0, 3);
-            G.initializeBlock(I*-1, 0, 6);
-            G.initializeBlock(K_k, 0, 9);
-            cpMatrix G_transpose = G.transpose();
 
-            // 2.1.2
-            btMatrix3x3 e; // null matrix
-            btMatrix3x3 mI_j = I * body_j.getInvMass();
-            btMatrix3x3 mI_k = I * body_k.getInvMass();
-            btMatrix3x3 tensor_j = body_j.getInvInertiaTensorWorld();
-            btMatrix3x3 tensor_k = body_k.getInvInertiaTensorWorld();
+            cpMatrix G_b(3,12); //Ball Joint G
+            G_b.initializeBlock(I, 0, 0);
+            G_b.initializeBlock(K_j*-1, 0, 3);
+            G_b.initializeBlock(I*-1, 0, 6);
+            G_b.initializeBlock(K_k, 0, 9);
+
+            cpMatrix G = n_cp.transpose() * G_b; // 1x12
+
+
+            //Calculate S= GM^-1G^T
+            btMatrix3x3 mI_j = I * body_j->getInvMass();
+            btMatrix3x3 mI_k = I * body_k->getInvMass();
+            btMatrix3x3 tensor_j = body_j->getInvInertiaTensorWorld();
+            btMatrix3x3 tensor_k = body_k->getInvInertiaTensorWorld();
 
             // the block-diagonal matrix M = diag(Mj,Mk) // see crash_course.pdf 2.2 end, page 14
             cpMatrix M_inv(12,12); // inverse mass matrix
@@ -142,34 +264,37 @@ void CustomDynamicsWorld::sequentialImpulses(std::vector<btPoint2PointConstraint
             M_inv.initializeBlock(mI_k, 6, 6);
             M_inv.initializeBlock(tensor_k, 9, 9);
 
-            // 2.1.3
-            btMatrix3x3 S = (G * M_inv * G_transpose).toBtMatrix3x3();
+            btScalar S = (G*M_inv*G.transpose())(0,0); // The Product returns a 1x1 Matrix, which is why we just save S as a scalar
 
-            btVector12 u = {body_j.getLinearVelocity(), body_j.getAngularVelocity(), body_k.getLinearVelocity(), body_k.getAngularVelocity()};
-            cpMatrix u_mat(12,1);
+            //Calculate Impulse
+            btVector12 u = {body_j->getLinearVelocity(), body_j->getAngularVelocity(), body_k->getLinearVelocity(), body_k->getAngularVelocity()};
+            cpMatrix u_mat(12,1); //12x1
             for(int i = 0; i < 4; i++){
                 u_mat.setWithBtVector3(u[i], i*3, 0);
             }
 
-            //2.2
-            btVector3 ndC = (G * -1 * u_mat).toBtVector3();
-            
-            btVector3 C = (body_j.getCenterOfMassPosition() + R_j*r_j)-(body_k.getCenterOfMassPosition() + R_k*r_k);
+            cpMatrix worldDiff(3,1);
+            worldDiff.setWithBtVector3(((body_j->getCenterOfMassPosition() + R_j*r_j)-(body_k->getCenterOfMassPosition() + R_k*r_k)), 0, 0);
+            btScalar C =  (n_cp.transpose() * worldDiff)(0,0);
+            btScalar dC = (G * u_mat)(0,0); //G * u_mat is 1x1 (1x12 * 12x1 = 1x1)
 
-            btVector3 target_veclotiy = (-getGamma())*C*(1/timeStep) + ndC;
-            cpMatrix impulse(3,1);
-            if(S.determinant() != 0){
-                impulse.setWithBtVector3(S.inverse() * target_veclotiy, 0, 0);
+            if(C <= 0){
+                btScalar impulse = 0;
+                if(S != 0 && dC <= 0){
+                    impulse = -1 * dC * (1/S);
+                }
+                if(impulse < 0){
+                    impulse = 0;
+                }
+
+                cpMatrix M_invG_transposeDeltaLambda = M_inv * G.transpose() * impulse;
+
+                body_j->setLinearVelocity( u[0] + M_invG_transposeDeltaLambda.getBtVector3(0,0));
+                body_j->setAngularVelocity(u[1] + M_invG_transposeDeltaLambda.getBtVector3(3,0));
+                body_k->setLinearVelocity( u[2] + M_invG_transposeDeltaLambda.getBtVector3(6,0));
+                body_k->setAngularVelocity(u[3] + M_invG_transposeDeltaLambda.getBtVector3(9,0));
             }
 
-            // 2.3
-            // 2.3.2
-            cpMatrix M_invG_transposeDeltaLambda = M_inv * G_transpose * impulse; // 12x1
-            // 2.3.3
-            body_j.setLinearVelocity( u[0] + M_invG_transposeDeltaLambda.getBtVector3(0,0));
-            body_j.setAngularVelocity(u[1] + M_invG_transposeDeltaLambda.getBtVector3(3,0));
-            body_k.setLinearVelocity( u[2] + M_invG_transposeDeltaLambda.getBtVector3(6,0));
-            body_k.setAngularVelocity(u[3] + M_invG_transposeDeltaLambda.getBtVector3(9,0));
         }
     }
 }
@@ -188,18 +313,9 @@ void CustomDynamicsWorld::integrateConstrainedBodiesWithCustomPhysics(btScalar t
         body->setAngularVelocity(body->getAngularVelocity() + body->getInvInertiaTensorWorld() * timeStep * body->getTotalTorque());
     }
 
-    // filter out the btPoint2PointConstraint instances:
-    const auto num_constraints = this->getNumConstraints();
-    std::vector<btPoint2PointConstraint *> point_constraints;
-
-    for (int i = 0; i < num_constraints; ++i){
-        auto c = this->getConstraint(i);
-        if(c->getConstraintType() == POINT2POINT_CONSTRAINT_TYPE){
-            point_constraints.push_back(dynamic_cast<btPoint2PointConstraint *>(c));
-        }
-    }
+    
  
-    sequentialImpulses(point_constraints, timeStep);
+    sequentialImpulses(timeStep);
 
     for (auto body : bodies)
     {
