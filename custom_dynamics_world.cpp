@@ -278,10 +278,16 @@ void CustomDynamicsWorld::contactCorrection(std::vector<btPersistentManifold *> 
             btScalar C =  (n_cp.transpose() * worldDiff)(0,0);
             btScalar dC = (G * u_mat)(0,0); //G * u_mat is 1x1 (1x12 * 12x1 = 1x1)
 
-            if(C <= 0){
+            if(C < 0 || (C==0 && dC<0)){ //Constraint is only violated when C negative or when C = 0 but dC<0
+            
+                // This is analogous to ball joints; To test this let a box fall onto a plane from high up 
+                // => With Gamma = 0 it will clip into the plane but with Gamma > 0 it will correct itself
+                // A nice effect is: The higher gamma the more the objects bounce, with Gamma > 1 they will gain energy with each collision
+                btScalar target_veclotiy = (-getGamma())*C*(1/timeStep) - dC;
+
                 btScalar impulse = 0;
-                if(S != 0 && dC <= 0){
-                    impulse = -1 * dC * (1/S);
+                if(S != 0 && dC < 0){ // S needs to be invertible and dont apply impulse if the bodies are moving apart (dc > 0)
+                    impulse = target_veclotiy * (1/S);
                 }
                 if(impulse < 0){
                     impulse = 0;
