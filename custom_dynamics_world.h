@@ -38,6 +38,8 @@ protected:
 
 	void contactCorrection(std::vector<btPersistentManifold *> &constraints, btScalar timeStep);
 
+	void frictionCorrection(std::vector<btPersistentManifold *> &constraints, btScalar timeStep);
+
 	//
 	void integrateConstrainedBodiesWithCustomPhysics(btScalar timeStep);
 };
