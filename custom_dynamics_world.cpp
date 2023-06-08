@@ -198,9 +198,9 @@ void CustomDynamicsWorld::sequentialImpulses(btScalar timeStep){
 
             if(v_t.length() == 0) contact.m_lateralFrictionDir1 = {0,0,0};
             else contact.m_lateralFrictionDir1 = v_t / v_t.length();
-            contact.m_lateralFrictionDir2 = {0,0,0};
 
-            //contact.m_lateralFrictionDir2 = contact.m_lateralFrictionDir1.cross(n);
+            
+            contact.m_lateralFrictionDir1 = n.cross(contact.m_lateralFrictionDir1);
         }
     }
 
@@ -495,21 +495,38 @@ void CustomDynamicsWorld::frictionCorrection(std::vector<btPersistentManifold *>
                 u_mat.setWithBtVector3(u[i], i*3, 0);
             }
 
+            btScalar deltaA1 = 0;
             if(S1 != 0){
-                a1 = ((G1 * u_mat) * -1 * (1/S1))(0,0);
+                deltaA1 = ((G1 * u_mat) * -1 * (1/S1))(0,0);
+                //a1 += deltaA1;
                 //cout << "before: " << dec << a1 << endl;
-                /*if(a1 < -0.5*contact.m_appliedImpulse){
+                if(a1+deltaA1 < -0.5*contact.m_appliedImpulse){
+                    deltaA1 = -0.5*contact.m_appliedImpulse - a1;
                     a1 = -0.5*contact.m_appliedImpulse;
-                }else if(a1 > 0.5*contact.m_appliedImpulse){
+                }else if(a1+deltaA1 > 0.5*contact.m_appliedImpulse){
+                    deltaA1 = 0.5*contact.m_appliedImpulse - a1;
                     a1 = 0.5*contact.m_appliedImpulse;
-                }*/
+                }else{
+                    a1 += deltaA1;
+                }
                 //cout << "after: " << dec << a1 << endl;
             }
+
+            btScalar deltaA2 = 0;
             if(S2 != 0){
-                a2 = ((G2 * u_mat) * -1 * (1/S2))(0,0);
+                deltaA2 = ((G2 * u_mat) * -1 * (1/S2))(0,0);
+                a2 += deltaA2;
+                //cout << "before: " << dec << a1 << endl;
+                if(a2 < -0.5*contact.m_appliedImpulse){
+                    a2 = -0.5*contact.m_appliedImpulse;
+                }else if(a2 > 0.5*contact.m_appliedImpulse){
+                    a2 = 0.5*contact.m_appliedImpulse;
+                }
+                //cout << "after: " << dec << a1 << endl;
             }
             
-            cpMatrix M_invG_transposeDeltaLambda1 = M_inv * G1.transpose() * a1; // 12x1
+
+            cpMatrix M_invG_transposeDeltaLambda1 = M_inv * G1.transpose() * deltaA1; // 12x1
 
             //M_invG_transposeDeltaLambda1.print("M_invG...");
             
@@ -519,7 +536,7 @@ void CustomDynamicsWorld::frictionCorrection(std::vector<btPersistentManifold *>
             body_k->setAngularVelocity(u[3] + M_invG_transposeDeltaLambda1.getBtVector3(9,0));
 
 
-            /*cpMatrix M_invG_transposeDeltaLambda2 = M_inv * G2.transpose() * a2; // 12x1
+            /*cpMatrix M_invG_transposeDeltaLambda2 = M_inv * G2.transpose() * deltaA2; // 12x1
             
             body_j->setLinearVelocity( u[0] + M_invG_transposeDeltaLambda2.getBtVector3(0,0));
             body_j->setAngularVelocity(u[1] + M_invG_transposeDeltaLambda2.getBtVector3(3,0));
