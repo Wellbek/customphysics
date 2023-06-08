@@ -2,6 +2,11 @@
 
 typedef btVector3 btVector12[4];
 
+using std::cout;
+using std::vector;
+using std::string;
+using std::endl;
+using std::dec;
 
 void CustomDynamicsWorld::internalSingleStepSimulation(btScalar timeStep)
 {
@@ -129,16 +134,73 @@ void CustomDynamicsWorld::sequentialImpulses(btScalar timeStep){
     //reset applied_impulse
     for(size_t i = 0; i < this->getDispatcher()->getNumManifolds(); ++i){
         auto manifold = manifolds[i];
+        
+        auto body_j = btRigidBody::upcast((manifold->getBody0()));
+        auto body_k = btRigidBody::upcast((manifold->getBody1()));
+
+        const auto is_rigidJ = body_j != nullptr;
+        const auto is_rigidK = body_k != nullptr;
+
+        if(!is_rigidJ || !is_rigidK) {
+            //Only do contact handling when both bodies are Rigidbodies
+            continue;
+        }
 
         const auto num_contacts = manifold->getNumContacts();
         for(int c = 0; c < num_contacts; ++c){
             auto& contact = manifold->getContactPoint(c);
+            const auto n = contact.m_normalWorldOnB;
+
+            const auto r_j = contact.m_localPointA;
+            const auto r_k = contact.m_localPointB;
+
             contact.m_appliedImpulse = 0;
             contact.m_appliedImpulseLateral1 = 0;
             contact.m_appliedImpulseLateral2 = 0;
-            computeOrthogonalVectors(contact.m_normalWorldOnB, contact.m_lateralFrictionDir1, contact.m_lateralFrictionDir2);
+            //computeOrthogonalVectors(n, contact.m_lateralFrictionDir1, contact.m_lateralFrictionDir2);
 
-            
+            const btMatrix3x3 I = btMatrix3x3::getIdentity();
+            btMatrix3x3 R_j = body_j->getWorldTransform().getBasis();
+            btMatrix3x3 R_k = body_k->getWorldTransform().getBasis();
+
+            //printMatrix(R_j, 'R');
+
+            //Calculate G
+            btVector3 v1,v2,v3;
+            (R_j * r_j).getSkewSymmetricMatrix(&v1,&v2,&v3);
+            btMatrix3x3 K_j = btMatrix3x3(v1,v2,v3);
+            (R_k * r_k).getSkewSymmetricMatrix(&v1,&v2,&v3);
+            btMatrix3x3 K_k = btMatrix3x3(v1,v2,v3);
+
+            cpMatrix G_b(3,12); //Ball Joint G
+            G_b.initializeBlock(I, 0, 0);
+            G_b.initializeBlock(K_j*-1, 0, 3);
+            G_b.initializeBlock(I*-1, 0, 6);
+            G_b.initializeBlock(K_k, 0, 9);
+
+            //G_b.print("G_b");
+
+            btVector12 u = {body_j->getLinearVelocity(), body_j->getAngularVelocity(), body_k->getLinearVelocity(), body_k->getAngularVelocity()};
+            cpMatrix u_mat(12,1); //12x1
+            for(int i = 0; i < 4; i++){
+                u_mat.setWithBtVector3(u[i], i*3, 0);
+            }
+
+            //u_mat.print("u");
+
+            btVector3 dCb = (G_b*u_mat).toBtVector3();
+
+            //printVector(dCb, 'C');
+
+            btVector3 v_t = dCb - (dCb.dot(n))*n;
+
+            //printVector(v_t, 'v');
+
+            if(v_t.length() == 0) contact.m_lateralFrictionDir1 = {0,0,0};
+            else contact.m_lateralFrictionDir1 = v_t / v_t.length();
+            contact.m_lateralFrictionDir2 = {0,0,0};
+
+            //contact.m_lateralFrictionDir2 = contact.m_lateralFrictionDir1.cross(n);
         }
     }
 
@@ -366,7 +428,7 @@ void CustomDynamicsWorld::frictionCorrection(std::vector<btPersistentManifold *>
             const auto t1 = contact.m_lateralFrictionDir1;
             const auto t2 = contact.m_lateralFrictionDir2;
             auto& a1 = contact.m_appliedImpulseLateral1;
-            auto& a2 = contact.m_appliedImpulse;
+            auto& a2 = contact.m_appliedImpulseLateral2;
             const auto r_j = contact.m_localPointA;
             const auto r_k = contact.m_localPointB;
 
@@ -377,6 +439,12 @@ void CustomDynamicsWorld::frictionCorrection(std::vector<btPersistentManifold *>
             t1_cp.setWithBtVector3(t1, 0, 0);
             cpMatrix t2_cp(3,1);
             t2_cp.setWithBtVector3(t2, 0, 0);
+
+            //t1_cp.print("t1");
+            //t2_cp.print("t2");
+
+            //cout << "a2: " << dec << a2 << endl;
+
             const btMatrix3x3 I = btMatrix3x3::getIdentity();
             btMatrix3x3 R_j = body_j->getWorldTransform().getBasis();
             btMatrix3x3 R_k = body_k->getWorldTransform().getBasis();
@@ -396,7 +464,12 @@ void CustomDynamicsWorld::frictionCorrection(std::vector<btPersistentManifold *>
             G_b.initializeBlock(I*-1, 0, 6);
             G_b.initializeBlock(K_k, 0, 9);
 
+            //G_b.print("G_b");
+
             cpMatrix G1 = t1_cp.transpose() * G_b; // 1x12
+
+            //G1.print("G1");
+
             cpMatrix G2 = t2_cp.transpose() * G_b;
 
             //Calculate S= GM^-1G^T
@@ -422,9 +495,36 @@ void CustomDynamicsWorld::frictionCorrection(std::vector<btPersistentManifold *>
                 u_mat.setWithBtVector3(u[i], i*3, 0);
             }
 
+            if(S1 != 0){
+                a1 = ((G1 * u_mat) * -1 * (1/S1))(0,0);
+                //cout << "before: " << dec << a1 << endl;
+                /*if(a1 < -0.5*contact.m_appliedImpulse){
+                    a1 = -0.5*contact.m_appliedImpulse;
+                }else if(a1 > 0.5*contact.m_appliedImpulse){
+                    a1 = 0.5*contact.m_appliedImpulse;
+                }*/
+                //cout << "after: " << dec << a1 << endl;
+            }
+            if(S2 != 0){
+                a2 = ((G2 * u_mat) * -1 * (1/S2))(0,0);
+            }
             
-            
+            cpMatrix M_invG_transposeDeltaLambda1 = M_inv * G1.transpose() * a1; // 12x1
 
+            //M_invG_transposeDeltaLambda1.print("M_invG...");
+            
+            body_j->setLinearVelocity( u[0] + M_invG_transposeDeltaLambda1.getBtVector3(0,0));
+            body_j->setAngularVelocity(u[1] + M_invG_transposeDeltaLambda1.getBtVector3(3,0));
+            body_k->setLinearVelocity( u[2] + M_invG_transposeDeltaLambda1.getBtVector3(6,0));
+            body_k->setAngularVelocity(u[3] + M_invG_transposeDeltaLambda1.getBtVector3(9,0));
+
+
+            /*cpMatrix M_invG_transposeDeltaLambda2 = M_inv * G2.transpose() * a2; // 12x1
+            
+            body_j->setLinearVelocity( u[0] + M_invG_transposeDeltaLambda2.getBtVector3(0,0));
+            body_j->setAngularVelocity(u[1] + M_invG_transposeDeltaLambda2.getBtVector3(3,0));
+            body_k->setLinearVelocity( u[2] + M_invG_transposeDeltaLambda2.getBtVector3(6,0));
+            body_k->setAngularVelocity(u[3] + M_invG_transposeDeltaLambda2.getBtVector3(9,0));*/
         }
     }
 }
