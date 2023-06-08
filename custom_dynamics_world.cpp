@@ -110,6 +110,16 @@ void CustomDynamicsWorld::sequentialImpulses(btScalar timeStep){
 
     //fetch all contact Manifolds
     auto manifolds = fetchManifolds(*this);
+    //reset applied_impulse
+    for(size_t i = 0; i < this->getDispatcher()->getNumManifolds(); ++i){
+        auto manifold = manifolds[i];
+
+        const auto num_contacts = manifold->getNumContacts();
+        for(int c = 0; c < num_contacts; ++c){
+            auto& contact = manifold->getContactPoint(c);
+            contact.m_appliedImpulse = 0;
+        }
+    }
 
     //2
     for (int i = 0; i < getConstraintIterations(); i++){  
@@ -233,7 +243,7 @@ void CustomDynamicsWorld::contactCorrection(std::vector<btPersistentManifold *> 
             btMatrix3x3 R_j = body_j->getWorldTransform().getBasis();
             btMatrix3x3 R_k = body_k->getWorldTransform().getBasis();
 
-            //Compute and apply delta_lambda etc. TODO
+            //Compute and apply delta_lambda etc.
 
             //Calculate G
             btVector3 v1,v2,v3;
@@ -286,19 +296,21 @@ void CustomDynamicsWorld::contactCorrection(std::vector<btPersistentManifold *> 
                 btScalar target_veclotiy = (-getGamma())*C*(1/timeStep) - dC;
 
                 btScalar impulse = 0;
-                if(S != 0 && dC < 0){ // S needs to be invertible and dont apply impulse if the bodies are moving apart (dc > 0)
+                if(S != 0){ // S needs to be invertible and dont apply impulse if the bodies are moving apart (dc > 0)
                     impulse = target_veclotiy * (1/S);
                 }
-                if(impulse < 0){
-                    impulse = 0;
-                }
 
+                contact.m_appliedImpulse += impulse;
+                if(contact.m_appliedImpulse < 0) continue;
+
+                //apply impulse
                 cpMatrix M_invG_transposeDeltaLambda = M_inv * G.transpose() * impulse;
 
                 body_j->setLinearVelocity( u[0] + M_invG_transposeDeltaLambda.getBtVector3(0,0));
                 body_j->setAngularVelocity(u[1] + M_invG_transposeDeltaLambda.getBtVector3(3,0));
                 body_k->setLinearVelocity( u[2] + M_invG_transposeDeltaLambda.getBtVector3(6,0));
                 body_k->setAngularVelocity(u[3] + M_invG_transposeDeltaLambda.getBtVector3(9,0));
+                
             }
 
         }
