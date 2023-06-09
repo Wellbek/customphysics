@@ -157,7 +157,6 @@ void CustomDynamicsWorld::sequentialImpulses(btScalar timeStep){
             contact.m_appliedImpulse = 0;
             contact.m_appliedImpulseLateral1 = 0;
             contact.m_appliedImpulseLateral2 = 0;
-            //computeOrthogonalVectors(n, contact.m_lateralFrictionDir1, contact.m_lateralFrictionDir2);
 
             const btMatrix3x3 I = btMatrix3x3::getIdentity();
             btMatrix3x3 R_j = body_j->getWorldTransform().getBasis();
@@ -188,25 +187,43 @@ void CustomDynamicsWorld::sequentialImpulses(btScalar timeStep){
 
             //u_mat.print("u");
 
-            btVector3 dCb = (G_b*u_mat).toBtVector3();
+            // relative velocity at the contact point v_r = derivative C_b
+            btVector3 v_r = (G_b*u_mat).toBtVector3();
 
-            //printVector(dCb, 'C');
+            //printVector(v_r, 'C');
 
-            btVector3 v_t = dCb - (dCb.dot(n))*n;
+            // tangent velocity v_T is the projection of v_r onto the tangent plane
+            btVector3 v_t = v_r - (v_r.dot(n))*n;
+            
+            //cout << "n . v_t: " << dec << n.dot(v_t) << endl;
+
+            //assert(n.dot(v_t) == 0);
 
             //printVector(v_t, 'v');
 
             if(v_t.length() == 0) contact.m_lateralFrictionDir1 = {0,0,0};
             else contact.m_lateralFrictionDir1 = v_t / v_t.length();
+            
+            contact.m_lateralFrictionDir2 = n.cross(contact.m_lateralFrictionDir1);
+            //printVector(contact.m_lateralFrictionDir2, 't');
+
+            if(contact.m_lateralFrictionDir2.length() != 0) contact.m_lateralFrictionDir2.normalize();
+            
+            //printVector(contact.m_lateralFrictionDir2, 'a');
 
             
-            contact.m_lateralFrictionDir1 = n.cross(contact.m_lateralFrictionDir1);
+            //cout << "n . t2: " << dec << n.dot(v_t) << endl;
+            //cout << "t1 . t2: " << dec << n.dot(v_t) << endl;
+
+            //assert(n.dot(contact.m_lateralFrictionDir1) == 0);
+            //assert(n.dot(contact.m_lateralFrictionDir2) == 0);
+            //assert(contact.m_lateralFrictionDir1.dot(contact.m_lateralFrictionDir2) == 0);
         }
     }
 
     //2
     for (int i = 0; i < getConstraintIterations(); i++){  
-        //2.1
+        //2.1 Ball joint constraints
         point2PointConstraintCorrection(point_constraints, timeStep);
 
         //2.2 Non-penetration constraints
@@ -386,8 +403,8 @@ void CustomDynamicsWorld::contactCorrection(std::vector<btPersistentManifold *> 
                     impulse = target_veclotiy * (1/S);
                 }
 
+                if(contact.m_appliedImpulse + impulse < 0) continue;
                 contact.m_appliedImpulse += impulse;
-                if(contact.m_appliedImpulse < 0) continue;
 
                 //apply impulse
                 cpMatrix M_invG_transposeDeltaLambda = M_inv * G.transpose() * impulse;
@@ -427,8 +444,6 @@ void CustomDynamicsWorld::frictionCorrection(std::vector<btPersistentManifold *>
             const auto n = contact.m_normalWorldOnB;
             const auto t1 = contact.m_lateralFrictionDir1;
             const auto t2 = contact.m_lateralFrictionDir2;
-            auto& a1 = contact.m_appliedImpulseLateral1;
-            auto& a2 = contact.m_appliedImpulseLateral2;
             const auto r_j = contact.m_localPointA;
             const auto r_k = contact.m_localPointB;
 
@@ -440,8 +455,8 @@ void CustomDynamicsWorld::frictionCorrection(std::vector<btPersistentManifold *>
             cpMatrix t2_cp(3,1);
             t2_cp.setWithBtVector3(t2, 0, 0);
 
-            //t1_cp.print("t1");
-            //t2_cp.print("t2");
+            // t1_cp.print("t1");
+            // t2_cp.print("t2");
 
             //cout << "a2: " << dec << a2 << endl;
 
@@ -495,53 +510,69 @@ void CustomDynamicsWorld::frictionCorrection(std::vector<btPersistentManifold *>
                 u_mat.setWithBtVector3(u[i], i*3, 0);
             }
 
+
+            auto mu = getMU();
+            auto lambda = contact.m_appliedImpulse;
             btScalar deltaA1 = 0;
+            btScalar deltaA2 = 0;
             if(S1 != 0){
-                deltaA1 = ((G1 * u_mat) * -1 * (1/S1))(0,0);
+                // deltaA1 = ((G1 * u_mat) * -1 * (1/S1))(0,0);
                 //a1 += deltaA1;
                 //cout << "before: " << dec << a1 << endl;
-                if(a1+deltaA1 < -0.5*contact.m_appliedImpulse){
-                    deltaA1 = -0.5*contact.m_appliedImpulse - a1;
-                    a1 = -0.5*contact.m_appliedImpulse;
-                }else if(a1+deltaA1 > 0.5*contact.m_appliedImpulse){
-                    deltaA1 = 0.5*contact.m_appliedImpulse - a1;
-                    a1 = 0.5*contact.m_appliedImpulse;
-                }else{
-                    a1 += deltaA1;
-                }
-                //cout << "after: " << dec << a1 << endl;
-            }
+                // if(a1+deltaA1 < -0.5*contact.m_appliedImpulse){
+                //     deltaA1 = -0.5*contact.m_appliedImpulse - a1;
+                //     a1 = -0.5*contact.m_appliedImpulse;
+                // }else if(a1+deltaA1 > 0.5*contact.m_appliedImpulse){
+                //     deltaA1 = 0.5*contact.m_appliedImpulse - a1;
+                //     a1 = 0.5*contact.m_appliedImpulse;
+                // }else{
+                //     a1 += deltaA1;
+                // }
+                // //cout << "after: " << dec << a1 << endl;
 
-            btScalar deltaA2 = 0;
-            if(S2 != 0){
-                deltaA2 = ((G2 * u_mat) * -1 * (1/S2))(0,0);
-                a2 += deltaA2;
-                //cout << "before: " << dec << a1 << endl;
-                if(a2 < -0.5*contact.m_appliedImpulse){
-                    a2 = -0.5*contact.m_appliedImpulse;
-                }else if(a2 > 0.5*contact.m_appliedImpulse){
-                    a2 = 0.5*contact.m_appliedImpulse;
-                }
-                //cout << "after: " << dec << a1 << endl;
+                auto& a1 = contact.m_appliedImpulseLateral1;
+                
+                deltaA1 = ((G1 * u_mat) * -1 * (1/S1))(0,0);
+
+                btClamp<btScalar>(deltaA1, -1 * (mu * lambda) - a1, (mu * lambda) - a1);
+
+                //cout << "a1: " << dec << a1 << endl;
+                //cout << "delta a1: " << dec << deltaA1 << endl;
+
+                a1 += deltaA1;
+
+                //cout << "mu*lambda: " << dec << mu * lambda << endl;
+
+                //assert(a1 >= -1 * (mu * lambda));
+                //assert(a1 <= (mu * lambda));
             }
-            
+            if(S2 != 0){        
+                auto& a2 = contact.m_appliedImpulseLateral2;
+
+                deltaA2 = ((G2 * u_mat) * -1 * (1/S2))(0,0);
+
+                //cout << "a2: " << dec << a2 << endl;
+                //cout << "delta a2: " << dec << deltaA2 << endl;
+
+
+                btClamp<btScalar>(deltaA2, -1 * (mu * lambda) - a2, (mu * lambda) - a2);
+
+                a2 += deltaA2;
+                
+                //cout << "mu*lambda: " << dec << mu * lambda << endl;
+
+                //assert(a2 >= -1 * (mu * lambda));
+                //assert(a2 <= (mu * lambda));
+            }
 
             cpMatrix M_invG_transposeDeltaLambda1 = M_inv * G1.transpose() * deltaA1; // 12x1
+            cpMatrix M_invG_transposeDeltaLambda2 = M_inv * G2.transpose() * deltaA2; // 12x1
 
             //M_invG_transposeDeltaLambda1.print("M_invG...");
-            
-            body_j->setLinearVelocity( u[0] + M_invG_transposeDeltaLambda1.getBtVector3(0,0));
-            body_j->setAngularVelocity(u[1] + M_invG_transposeDeltaLambda1.getBtVector3(3,0));
-            body_k->setLinearVelocity( u[2] + M_invG_transposeDeltaLambda1.getBtVector3(6,0));
-            body_k->setAngularVelocity(u[3] + M_invG_transposeDeltaLambda1.getBtVector3(9,0));
-
-
-            /*cpMatrix M_invG_transposeDeltaLambda2 = M_inv * G2.transpose() * deltaA2; // 12x1
-            
-            body_j->setLinearVelocity( u[0] + M_invG_transposeDeltaLambda2.getBtVector3(0,0));
-            body_j->setAngularVelocity(u[1] + M_invG_transposeDeltaLambda2.getBtVector3(3,0));
-            body_k->setLinearVelocity( u[2] + M_invG_transposeDeltaLambda2.getBtVector3(6,0));
-            body_k->setAngularVelocity(u[3] + M_invG_transposeDeltaLambda2.getBtVector3(9,0));*/
+            body_j->setLinearVelocity( u[0] + M_invG_transposeDeltaLambda1.getBtVector3(0,0) + M_invG_transposeDeltaLambda2.getBtVector3(0,0));
+            body_j->setAngularVelocity(u[1] + M_invG_transposeDeltaLambda1.getBtVector3(3,0) + M_invG_transposeDeltaLambda2.getBtVector3(3,0));
+            body_k->setLinearVelocity( u[2] + M_invG_transposeDeltaLambda1.getBtVector3(6,0) + M_invG_transposeDeltaLambda2.getBtVector3(6,0));
+            body_k->setAngularVelocity(u[3] + M_invG_transposeDeltaLambda1.getBtVector3(9,0) + M_invG_transposeDeltaLambda2.getBtVector3(9,0));
         }
     }
 }

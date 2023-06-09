@@ -8,11 +8,13 @@
 #include <vector>
 #include <iostream>
 #include <string>
+#include <cassert>
 
 class CustomDynamicsWorld : public btSoftRigidDynamicsWorld {
 private:
     int m_constraint_iters;
     float m_gamma; // attenuator for drift correction per iteration
+    float m_mu; // attenuator for friction correction per iteration
 
 public:
     CustomDynamicsWorld(btDispatcher* dispatcher,
@@ -21,13 +23,16 @@ public:
                         btCollisionConfiguration* collisionConfiguration,
                         btSoftBodySolver* softBodySolver = 0)
                             : btSoftRigidDynamicsWorld(dispatcher, pairCache, constraintSolver, collisionConfiguration, softBodySolver),
-                              m_constraint_iters(10), m_gamma(1.0f) {}
+                              m_constraint_iters(10), m_gamma(0.1f), m_mu(0.3f) {}
 
     void setConstraintIterations(int iterations) { m_constraint_iters = iterations; }
     int getConstraintIterations() const { return m_constraint_iters; }
 
     void setGamma(float gamma) { m_gamma = gamma; }
     float getGamma() const { return m_gamma; }
+    
+    void setMU(float mu) { m_mu = mu; }
+    float getMU() const { return m_mu; }
 
 protected:
     void internalSingleStepSimulation(btScalar timeStep) override;
