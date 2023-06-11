@@ -10,6 +10,8 @@
 #include <string>
 #include <cassert>
 
+using namespace std;
+
 class CustomDynamicsWorld : public btSoftRigidDynamicsWorld {
 private:
     int m_constraint_iters;
@@ -47,7 +49,14 @@ protected:
 
 	//
 	void integrateConstrainedBodiesWithCustomPhysics(btScalar timeStep);
+
+    // Helper functions:
+    cpMatrix computeConstraintVelocityMap(btMatrix3x3 R_j, btMatrix3x3 R_k,btVector3 r_j, btVector3 r_k);
+    cpMatrix computeInverseMassMatrix(btRigidBody body_j, btRigidBody body_k);
+    cpMatrix computeConstraintVelocityMatrix(btRigidBody body_j, btRigidBody body_k);
+    void applyImpulse(btRigidBody& body_j, btRigidBody& body_k, cpMatrix impulse);
 };
 
+# define I btMatrix3x3::getIdentity()
 
 #endif // CUSTOM_DYNAMICS_WORLD_H
