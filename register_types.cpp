@@ -65,6 +65,18 @@ void register_customphysics_types() {
 	GLOBAL_DEF("physics/customphysics/mu", 0.3f);
 	ProjectSettings::get_singleton()->set_custom_property_info("physics/customphysics/mu",
 			PropertyInfo(Variant::REAL, "physics/customphysics/mu"));
+
+	GLOBAL_DEF("physics/customphysics/friction_constraints", true);
+	ProjectSettings::get_singleton()->set_custom_property_info("physics/customphysics/friction_constraints",
+			PropertyInfo(Variant::BOOL, "physics/customphysics/friction_constraints"));
+	
+	GLOBAL_DEF("physics/customphysics/contact_constraints", true);
+	ProjectSettings::get_singleton()->set_custom_property_info("physics/customphysics/contact_constraints",
+			PropertyInfo(Variant::BOOL, "physics/customphysics/contact_constraints"));
+	
+	GLOBAL_DEF("physics/customphysics/ball_joints_constraints", true);
+	ProjectSettings::get_singleton()->set_custom_property_info("physics/customphysics/ball_joints_constraints",
+			PropertyInfo(Variant::BOOL, "physics/customphysics/ball_joints_constraints"));
 #endif
 }
 

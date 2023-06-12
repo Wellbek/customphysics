@@ -133,13 +133,13 @@ void CustomDynamicsWorld::sequentialImpulses(btScalar timeStep){
     //2
     for (int i = 0; i < getConstraintIterations(); i++){  
         //2.1 Ball joint constraints
-        point2PointConstraintCorrection(point_constraints, timeStep);
+        if(getApplyBallJointsCorrections()) point2PointConstraintCorrection(point_constraints, timeStep);
 
-        //2.2 Non-penetration constraints
-        //contactCorrection(manifolds, timeStep);
+        // 2.2 Non-penetration constraints
+        // if(getApplyContactCorrections()) contactCorrection(manifolds, timeStep);
         // 2.3 Coulomb friction
-        // frictionCorrection(manifolds, timeStep);
-        manifoldCorrection(manifolds, timeStep, i);
+        // if(getApplyFrictionCorrections()) frictionCorrection(manifolds, timeStep);
+        if(getApplyFrictionCorrections() || getApplyContactCorrections()) manifoldCorrection(manifolds, timeStep, i);
     }
 }
 
@@ -408,84 +408,86 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
             }
 
             // CONTACT CORRECTION:
+            if(getApplyContactCorrections()){     
+                cpMatrix worldDiff(3,1);
+                worldDiff.setWithBtVector3(((body_j->getCenterOfMassPosition() + R_j*r_j)-(body_k->getCenterOfMassPosition() + R_k*r_k)), 0, 0);
+                btScalar C =  (n_cp.transpose() * worldDiff)(0,0);
+                btScalar dC = (G * u)(0,0); //G * u is 1x1 (1x12 * 12x1 = 1x1)
 
-            cpMatrix worldDiff(3,1);
-            worldDiff.setWithBtVector3(((body_j->getCenterOfMassPosition() + R_j*r_j)-(body_k->getCenterOfMassPosition() + R_k*r_k)), 0, 0);
-            btScalar C =  (n_cp.transpose() * worldDiff)(0,0);
-            btScalar dC = (G * u)(0,0); //G * u is 1x1 (1x12 * 12x1 = 1x1)
+                if(C < 0 || (C==0 && dC<0)){ //Constraint is only violated when C negative or when C = 0 but dC<0
+                
+                    // This is analogous to ball joints; To test this let a box fall onto a plane from high up 
+                    // => With Gamma = 0 it will clip into the plane but with Gamma > 0 it will correct itself
+                    // A nice effect is: The higher gamma the more the objects bounce, with Gamma > 1 they will gain energy with each collision
+                    btScalar target_veclotiy = (-getGamma())*C*(1/timeStep) - dC;
 
-            if(C < 0 || (C==0 && dC<0)){ //Constraint is only violated when C negative or when C = 0 but dC<0
-            
-                // This is analogous to ball joints; To test this let a box fall onto a plane from high up 
-                // => With Gamma = 0 it will clip into the plane but with Gamma > 0 it will correct itself
-                // A nice effect is: The higher gamma the more the objects bounce, with Gamma > 1 they will gain energy with each collision
-                btScalar target_veclotiy = (-getGamma())*C*(1/timeStep) - dC;
+                    btScalar impulse = 0;
+                    if(S != 0){ // S needs to be invertible and dont apply impulse if the bodies are moving apart (dc > 0)
+                        impulse = target_veclotiy * (1/S);
+                    }
 
-                btScalar impulse = 0;
-                if(S != 0){ // S needs to be invertible and dont apply impulse if the bodies are moving apart (dc > 0)
-                    impulse = target_veclotiy * (1/S);
+                    if(contact.m_appliedImpulse + impulse < 0) continue;
+                    contact.m_appliedImpulse += impulse;
+
+                    //apply impulse
+                    cpMatrix M_invG_transposeDeltaLambda = M_inv * G.transpose() * impulse;
+
+                    applyImpulse(*body_j, *body_k, M_invG_transposeDeltaLambda);
                 }
-
-                if(contact.m_appliedImpulse + impulse < 0) continue;
-                contact.m_appliedImpulse += impulse;
-
-                //apply impulse
-                cpMatrix M_invG_transposeDeltaLambda = M_inv * G.transpose() * impulse;
-
-                applyImpulse(*body_j, *body_k, M_invG_transposeDeltaLambda);
             }
 
             // FRICTION CORRECTION:
+            if(getApplyFrictionCorrections()) {
+                const auto t1 = contact.m_lateralFrictionDir1;
+                const auto t2 = contact.m_lateralFrictionDir2;
 
-            const auto t1 = contact.m_lateralFrictionDir1;
-            const auto t2 = contact.m_lateralFrictionDir2;
+                //Needed Variables
+                cpMatrix t1_cp(3,1);
+                t1_cp.setWithBtVector3(t1, 0, 0);
+                cpMatrix t2_cp(3,1);
+                t2_cp.setWithBtVector3(t2, 0, 0);
 
-            //Needed Variables
-            cpMatrix t1_cp(3,1);
-            t1_cp.setWithBtVector3(t1, 0, 0);
-            cpMatrix t2_cp(3,1);
-            t2_cp.setWithBtVector3(t2, 0, 0);
+                //Compute and apply delta_a1, delta_a2 etc.
 
-            //Compute and apply delta_a1, delta_a2 etc.
+                //Calculate Gs
+                cpMatrix G1 = t1_cp.transpose() * G_b; // 1x12
+                cpMatrix G2 = t2_cp.transpose() * G_b;
 
-            //Calculate Gs
-            cpMatrix G1 = t1_cp.transpose() * G_b; // 1x12
-            cpMatrix G2 = t2_cp.transpose() * G_b;
+                //Calculate S = GM^-1G^T
+                btScalar S1 = (G1*M_inv*G1.transpose())(0,0); // The Product returns a 1x1 Matrix, which is why we just save S as a scalar
+                btScalar S2 = (G2*M_inv*G2.transpose())(0,0);
 
-            //Calculate S = GM^-1G^T
-            btScalar S1 = (G1*M_inv*G1.transpose())(0,0); // The Product returns a 1x1 Matrix, which is why we just save S as a scalar
-            btScalar S2 = (G2*M_inv*G2.transpose())(0,0);
+                // Recalculate Impulse
+                u = computeConstraintVelocityMatrix(*body_j, *body_k);
 
-            // Recalculate Impulse
-            u = computeConstraintVelocityMatrix(*body_j, *body_k);
-
-            auto mu = getMU();
-            auto lambda = contact.m_appliedImpulse;
-            btScalar deltaA1 = 0;
-            btScalar deltaA2 = 0;
-            if(S1 != 0){
-                auto& a1 = contact.m_appliedImpulseLateral1;
+                auto mu = getMU();
+                auto lambda = contact.m_appliedImpulse;
+                btScalar deltaA1 = 0;
+                btScalar deltaA2 = 0;
+                if(S1 != 0){
+                    auto& a1 = contact.m_appliedImpulseLateral1;
                 
-                deltaA1 = ((G1 * u) * -1 * (1/S1))(0,0);
+                    deltaA1 = ((G1 * u) * -1 * (1/S1))(0,0);
 
-                btClamp<btScalar>(deltaA1, -1 * (mu * lambda) - a1, (mu * lambda) - a1);
+                    btClamp<btScalar>(deltaA1, -1 * (mu * lambda) - a1, (mu * lambda) - a1);
 
-                a1 += deltaA1;
+                    a1 += deltaA1;
+                }
+                if(S2 != 0){        
+                    auto& a2 = contact.m_appliedImpulseLateral2;
+
+                    deltaA2 = ((G2 * u) * -1 * (1/S2))(0,0);
+
+                    btClamp<btScalar>(deltaA2, -1 * (mu * lambda) - a2, (mu * lambda) - a2);
+
+                    a2 += deltaA2;
+                }
+
+                cpMatrix M_invG_transposeDeltaLambda1 = M_inv * G1.transpose() * deltaA1; // 12x1
+                cpMatrix M_invG_transposeDeltaLambda2 = M_inv * G2.transpose() * deltaA2; // 12x1
+
+                applyImpulse(*body_j, *body_k, M_invG_transposeDeltaLambda1 + M_invG_transposeDeltaLambda2);
             }
-            if(S2 != 0){        
-                auto& a2 = contact.m_appliedImpulseLateral2;
-
-                deltaA2 = ((G2 * u) * -1 * (1/S2))(0,0);
-
-                btClamp<btScalar>(deltaA2, -1 * (mu * lambda) - a2, (mu * lambda) - a2);
-
-                a2 += deltaA2;
-            }
-
-            cpMatrix M_invG_transposeDeltaLambda1 = M_inv * G1.transpose() * deltaA1; // 12x1
-            cpMatrix M_invG_transposeDeltaLambda2 = M_inv * G2.transpose() * deltaA2; // 12x1
-
-            applyImpulse(*body_j, *body_k, M_invG_transposeDeltaLambda1 + M_invG_transposeDeltaLambda2);
         }
     }
 }
