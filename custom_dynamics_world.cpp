@@ -133,13 +133,13 @@ void CustomDynamicsWorld::sequentialImpulses(btScalar timeStep){
     //2
     for (int i = 0; i < getConstraintIterations(); i++){  
         //2.1 Ball joint constraints
-        point2PointConstraintCorrection(point_constraints, timeStep);
+        if(getApplyBallJointsCorrections()) point2PointConstraintCorrection(point_constraints, timeStep);
 
         //2.2 Non-penetration constraints
-        contactCorrection(manifolds, timeStep);
+        if(getApplyContactCorrections()) contactCorrection(manifolds, timeStep);
 
         //2.3 Coulomb friction
-        frictionCorrection(manifolds, timeStep);
+        if(getApplyFrictionCorrections()) frictionCorrection(manifolds, timeStep);
     }
 }
 

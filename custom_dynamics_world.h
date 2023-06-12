@@ -17,6 +17,9 @@ private:
     int m_constraint_iters;
     float m_gamma; // attenuator for drift correction per iteration
     float m_mu; // attenuator for friction correction per iteration
+    float m_apply_friction_constraints; // toggle to correct for friction
+    float m_apply_contact_constraints; // toggle to correct for collisions
+    float m_apply_ball_joints_constraints; // toggle to correct for ball joints
 
 public:
     CustomDynamicsWorld(btDispatcher* dispatcher,
@@ -25,7 +28,8 @@ public:
                         btCollisionConfiguration* collisionConfiguration,
                         btSoftBodySolver* softBodySolver = 0)
                             : btSoftRigidDynamicsWorld(dispatcher, pairCache, constraintSolver, collisionConfiguration, softBodySolver),
-                              m_constraint_iters(10), m_gamma(0.1f), m_mu(0.3f) {}
+                              m_constraint_iters(10), m_gamma(0.1f), m_mu(0.3f), 
+                              m_apply_friction_constraints(true), m_apply_ball_joints_constraints(true), m_apply_contact_constraints(true) {}
 
     void setConstraintIterations(int iterations) { m_constraint_iters = iterations; }
     int getConstraintIterations() const { return m_constraint_iters; }
@@ -35,6 +39,15 @@ public:
     
     void setMU(float mu) { m_mu = mu; }
     float getMU() const { return m_mu; }
+
+    void setApplyFrictionCorrections(bool friction) { m_apply_friction_constraints = friction; }
+    bool getApplyFrictionCorrections() const { return m_apply_friction_constraints; }
+
+    void setApplyContactCorrections(bool contact) { m_apply_contact_constraints = contact; }
+    bool getApplyContactCorrections() const { return m_apply_contact_constraints; }
+
+    void setApplyBallJointsCorrections(bool ball_joints) { m_apply_ball_joints_constraints = ball_joints; }
+    bool getApplyBallJointsCorrections() const { return m_apply_ball_joints_constraints; }
 
 protected:
     void internalSingleStepSimulation(btScalar timeStep) override;
