@@ -56,20 +56,22 @@ protected:
 
 	void point2PointConstraintCorrection(std::vector<btPoint2PointConstraint *> &constraints, btScalar timeStep);
 
-	void contactCorrection(std::vector<btPersistentManifold *> &constraints, btScalar timeStep);
-
-	void frictionCorrection(std::vector<btPersistentManifold *> &constraints, btScalar timeStep);
-
     void manifoldCorrection(vector<btPersistentManifold *> &manifolds, btScalar timeStep, int i);
 
 	//
 	void integrateConstrainedBodiesWithCustomPhysics(btScalar timeStep);
 
     // Helper functions:
+    btScalar multiplyVector3withMatrix3x3FromBothSides(btVector3& vec, btMatrix3x3& mat);
     cpMatrix computeConstraintVelocityMap(btMatrix3x3 R_j, btMatrix3x3 R_k,btVector3 r_j, btVector3 r_k);
     cpMatrix computeInverseMassMatrix(btRigidBody body_j, btRigidBody body_k);
     cpMatrix computeConstraintVelocityMatrix(btRigidBody body_j, btRigidBody body_k);
     void applyImpulse(btRigidBody& body_j, btRigidBody& body_k, cpMatrix impulse);
+
+    //Prints:
+    void printVector(const btVector3& vector, string name);
+    void printMatrix(const btMatrix3x3& matrix, string name);
+    void printQuat(const btQuaternion quat, string name);
 };
 
 # define I btMatrix3x3::getIdentity()

@@ -144,14 +144,8 @@ void CustomDynamicsWorld::sequentialImpulses(btScalar timeStep){
 }
 
 /*2.1 Foreach Constraint i: Compute Si for the system of the two rigid bodies constrained only by the current constraint in isolation
-    2.1.1 Compute constraint velocity map G
-    2.1.2 getting mass matrix M (or rather M^{-1})
-    2.1.3 compute S
 2.2 Compute an impulse represented by ∆λ˜_i by ∆λ˜_i = S^{−1]_i(−Giu), where u = (u_j , u_k).
-2.3 Apply the impulse by updating the velocities of rigid bodies j and k, i.e. u <- u^p + M^{-1}G^T_i ∆λ˜
-    (2.3.1 compute u^p = u^n + ∆t  M−1 f^{ext})
-    2.3.2 compute M^{-1}G^T_i ∆λ
-    2.3.3 compute new velocity u*/
+2.3 Apply the impulse by updating the velocities of rigid bodies j and k, i.e. u <- u^p + M^{-1}G^T_i ∆λ˜*/
 void CustomDynamicsWorld::point2PointConstraintCorrection(vector<btPoint2PointConstraint *> &constraints, btScalar timeStep){
     for (auto c : constraints){
 
@@ -159,183 +153,52 @@ void CustomDynamicsWorld::point2PointConstraintCorrection(vector<btPoint2PointCo
         btRigidBody& body_k = c->getRigidBodyB();
 
         // 2.1 
-        // 2.1.1
         const auto r_j = c->getPivotInA(); // attachement point for body j
         const auto r_k = c->getPivotInB(); // attachement point for body k
         const auto R_j = body_j.getWorldTransform().getBasis();
         const auto R_k = body_k.getWorldTransform().getBasis();
-        cpMatrix G = computeConstraintVelocityMap(R_j, R_k, r_j, r_k);
-        cpMatrix G_transpose = G.transpose();
+        
+        const auto m_inv_j = body_j.getInvMass();
+        const auto m_inv_k = body_k.getInvMass();
+
+        auto tensor_j = body_j.getInvInertiaTensorWorld();
+        auto tensor_k = body_k.getInvInertiaTensorWorld();
+
+        btVector3 v1,v2,v3;
+        (R_j * r_j).getSkewSymmetricMatrix(&v1,&v2,&v3);
+        btMatrix3x3 K_j = btMatrix3x3(v1,v2,v3);
+        (R_k * r_k).getSkewSymmetricMatrix(&v1,&v2,&v3);
+        btMatrix3x3 K_k = btMatrix3x3(v1,v2,v3);
 
         //Calculate S = GM^-1G^T
-
-        // 2.1.2
-        cpMatrix M_inv = computeInverseMassMatrix(body_j, body_k);
-
-        // 2.1.3
-        btMatrix3x3 S = (G * M_inv * G_transpose).toBtMatrix3x3();
-
-        cpMatrix u = computeConstraintVelocityMatrix(body_j, body_k);
+        btMatrix3x3 S = I*(m_inv_j+m_inv_k) - K_j*tensor_j*K_j - K_k*tensor_k*K_k;
 
         //2.2
-        btVector3 ndC = (G * -1 * u).toBtVector3();
+
+        //Get Velocities
+        btVector3 lV_j = body_j.getLinearVelocity();
+        btVector3 aV_j = body_j.getAngularVelocity();
+        btVector3 lV_k = body_k.getLinearVelocity();
+        btVector3 aV_k = body_k.getAngularVelocity();
+
+        //Calculate impulse
+        btVector3 dC = lV_j-K_j*aV_j-lV_k+K_k*aV_k; // G*u
         
         btVector3 C = (body_j.getCenterOfMassPosition() + R_j*r_j)-(body_k.getCenterOfMassPosition() + R_k*r_k);
 
-        btVector3 target_veclotiy = (-getGamma())*C*(1/timeStep) + ndC;
-        cpMatrix impulse(3,1);
+        btVector3 target_veclotiy = (-getGamma())*C*(1/timeStep) - dC;
+
+        btVector3 impulse = {0,0,0};
         if(S.determinant() != 0){
-            impulse.setWithBtVector3(S.inverse() * target_veclotiy, 0, 0);
+            impulse = S.inverse() * target_veclotiy;
         }
 
         // 2.3
-        // 2.3.2
-        cpMatrix M_invG_transposeDeltaLambda = M_inv * G_transpose * impulse; // 12x1
-        // 2.3.3
-        applyImpulse(body_j, body_k, M_invG_transposeDeltaLambda);
-    }
-}
+        body_j.setLinearVelocity(lV_j + m_inv_j*impulse);
+        body_j.setAngularVelocity(aV_j + tensor_j*K_j*impulse);
 
-void CustomDynamicsWorld::contactCorrection(vector<btPersistentManifold *> &manifolds, btScalar timeStep){
-    auto num_manifolds = this->getDispatcher()->getNumManifolds();
-
-    for(size_t i = 0; i < num_manifolds; ++i){
-        auto manifold = manifolds[i];
-
-        // The const_cast is not nice, but apparently necessary
-        auto body_j = btRigidBody::upcast(const_cast<btCollisionObject *>(manifold->getBody0()));
-        auto body_k = btRigidBody::upcast(const_cast<btCollisionObject *>(manifold->getBody1()));
-
-        const auto num_contacts = manifold->getNumContacts();
-        for(int c = 0; c < num_contacts; ++c){
-            auto& contact = manifold->getContactPoint(c);
-            const auto n = contact.m_normalWorldOnB;
-
-            //Needed Variables
-            cpMatrix n_cp(3,1);
-            n_cp.setWithBtVector3(n, 0, 0);
-
-            //Compute and apply delta_lambda etc.
-
-            //Calculate G
-            const auto r_j = contact.m_localPointA;
-            const auto r_k = contact.m_localPointB;
-            const auto R_j = body_j->getWorldTransform().getBasis();
-            const auto R_k = body_k->getWorldTransform().getBasis();
-            cpMatrix G_b = computeConstraintVelocityMap(R_j, R_k, r_j, r_k);
-            cpMatrix G = n_cp.transpose() * G_b; // 1x12
-
-            //Calculate S= GM^-1G^T
-            cpMatrix M_inv = computeInverseMassMatrix(*body_j, *body_k);
-            btScalar S = (G*M_inv*G.transpose())(0,0); // The Product returns a 1x1 Matrix, which is why we just save S as a scalar
-
-            //Calculate Impulse
-            cpMatrix u = computeConstraintVelocityMatrix(*body_j, *body_k);
-
-            cpMatrix worldDiff(3,1);
-            worldDiff.setWithBtVector3(((body_j->getCenterOfMassPosition() + R_j*r_j)-(body_k->getCenterOfMassPosition() + R_k*r_k)), 0, 0);
-            btScalar C =  (n_cp.transpose() * worldDiff)(0,0);
-            btScalar dC = (G * u)(0,0); //G * u is 1x1 (1x12 * 12x1 = 1x1)
-
-            if(C < 0 || (C==0 && dC<0)){ //Constraint is only violated when C negative or when C = 0 but dC<0
-            
-                // This is analogous to ball joints; To test this let a box fall onto a plane from high up 
-                // => With Gamma = 0 it will clip into the plane but with Gamma > 0 it will correct itself
-                // A nice effect is: The higher gamma the more the objects bounce, with Gamma > 1 they will gain energy with each collision
-                btScalar target_veclotiy = (-getGamma())*C*(1/timeStep) - dC;
-
-                btScalar impulse = 0;
-                if(S != 0){ // S needs to be invertible and dont apply impulse if the bodies are moving apart (dc > 0)
-                    impulse = target_veclotiy * (1/S);
-                }
-
-                if(contact.m_appliedImpulse + impulse < 0) continue;
-                contact.m_appliedImpulse += impulse;
-
-                //apply impulse
-                cpMatrix M_invG_transposeDeltaLambda = M_inv * G.transpose() * impulse;
-
-                applyImpulse(*body_j, *body_k, M_invG_transposeDeltaLambda);
-            }
-        }
-    }
-}
-
-
-void CustomDynamicsWorld::frictionCorrection(vector<btPersistentManifold *> &manifolds, btScalar timeStep){
-    auto num_manifolds = this->getDispatcher()->getNumManifolds();
-
-    for(size_t i = 0; i < num_manifolds; ++i){
-        auto manifold = manifolds[i];
-
-        // The const_cast is not nice, but apparently necessary
-        auto body_j = btRigidBody::upcast(const_cast<btCollisionObject *>(manifold->getBody0()));
-        auto body_k = btRigidBody::upcast(const_cast<btCollisionObject *>(manifold->getBody1()));
-    
-        const auto num_contacts = manifold->getNumContacts();
-        for(int c = 0; c < num_contacts; ++c){
-            auto& contact = manifold->getContactPoint(c);
-            const auto n = contact.m_normalWorldOnB;
-            const auto t1 = contact.m_lateralFrictionDir1;
-            const auto t2 = contact.m_lateralFrictionDir2;
-
-            //Needed Variables
-            cpMatrix n_cp(3,1);
-            n_cp.setWithBtVector3(n, 0, 0);
-            cpMatrix t1_cp(3,1);
-            t1_cp.setWithBtVector3(t1, 0, 0);
-            cpMatrix t2_cp(3,1);
-            t2_cp.setWithBtVector3(t2, 0, 0);
-
-            //Compute and apply delta_a1, delta_a2 etc.
-
-            //Calculate G
-            const auto r_j = contact.m_localPointA;
-            const auto r_k = contact.m_localPointB;
-            const auto R_j = body_j->getWorldTransform().getBasis();
-            const auto R_k = body_k->getWorldTransform().getBasis();
-            cpMatrix G_b = computeConstraintVelocityMap(R_j, R_k, r_j, r_k);
-
-            cpMatrix G1 = t1_cp.transpose() * G_b; // 1x12
-            cpMatrix G2 = t2_cp.transpose() * G_b;
-
-            //Calculate S = GM^-1G^T
-            cpMatrix M_inv = computeInverseMassMatrix(*body_j, *body_k);
-
-            btScalar S1 = (G1*M_inv*G1.transpose())(0,0); // The Product returns a 1x1 Matrix, which is why we just save S as a scalar
-            btScalar S2 = (G2*M_inv*G2.transpose())(0,0);
-
-            //Calculate Impulse
-            cpMatrix u = computeConstraintVelocityMatrix(*body_j, *body_k);
-
-            auto mu = getMU();
-            auto lambda = contact.m_appliedImpulse;
-            btScalar deltaA1 = 0;
-            btScalar deltaA2 = 0;
-            if(S1 != 0){
-                auto& a1 = contact.m_appliedImpulseLateral1;
-                
-                deltaA1 = ((G1 * u) * -1 * (1/S1))(0,0);
-
-                btClamp<btScalar>(deltaA1, -1 * (mu * lambda) - a1, (mu * lambda) - a1);
-
-                a1 += deltaA1;
-            }
-            if(S2 != 0){        
-                auto& a2 = contact.m_appliedImpulseLateral2;
-
-                deltaA2 = ((G2 * u) * -1 * (1/S2))(0,0);
-
-                btClamp<btScalar>(deltaA2, -1 * (mu * lambda) - a2, (mu * lambda) - a2);
-
-                a2 += deltaA2;
-            }
-
-            cpMatrix M_invG_transposeDeltaLambda1 = M_inv * G1.transpose() * deltaA1; // 12x1
-            cpMatrix M_invG_transposeDeltaLambda2 = M_inv * G2.transpose() * deltaA2; // 12x1
-
-            applyImpulse(*body_j, *body_k, M_invG_transposeDeltaLambda1 + M_invG_transposeDeltaLambda2);
-        }
+        body_k.setLinearVelocity(lV_k - m_inv_k*impulse);
+        body_k.setAngularVelocity(aV_k - tensor_k*K_k*impulse);
     }
 }
 
@@ -364,37 +227,43 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
         for(int c = 0; c < num_contacts; ++c){
             auto& contact = manifold->getContactPoint(c);
 
-            const auto n = contact.m_normalWorldOnB;
+            //Get all Variables
+            auto n = contact.m_normalWorldOnB;
 
-            //Needed Variables
-            cpMatrix n_cp(3,1);
-            n_cp.setWithBtVector3(n, 0, 0);
-
-            //Compute and apply delta_lambda etc.
-
-            //Calculate G
             const auto r_j = contact.m_localPointA;
             const auto r_k = contact.m_localPointB;
             const auto R_j = body_j->getWorldTransform().getBasis();
             const auto R_k = body_k->getWorldTransform().getBasis();
-            cpMatrix G_b = computeConstraintVelocityMap(R_j, R_k, r_j, r_k);
-            cpMatrix G = n_cp.transpose() * G_b; // 1x12
 
-            //Calculate S= GM^-1G^T
-            cpMatrix M_inv = computeInverseMassMatrix(*body_j, *body_k);
-            btScalar S = (G*M_inv*G.transpose())(0,0); // The Product returns a 1x1 Matrix, which is why we just save S as a scalar
+            const auto m_inv_j = body_j->getInvMass();
+            const auto m_inv_k = body_k->getInvMass();
 
-            //Calculate Impulse
-            cpMatrix u = computeConstraintVelocityMatrix(*body_j, *body_k);
+            auto tensor_j = body_j->getInvInertiaTensorWorld();
+            auto tensor_k = body_k->getInvInertiaTensorWorld();
 
-            // if first iteration reset applied impulses α1 (and α2) and compute tangent vectors t1 (and t2) for each contact
+            btVector3 v1,v2,v3;
+            (R_j * r_j).getSkewSymmetricMatrix(&v1,&v2,&v3);
+            btMatrix3x3 K_j = btMatrix3x3(v1,v2,v3);
+            (R_k * r_k).getSkewSymmetricMatrix(&v1,&v2,&v3);
+            btMatrix3x3 K_k = btMatrix3x3(v1,v2,v3);
+
+            auto KJK_j = K_j*tensor_j*K_j;
+            auto KJK_k = K_k*tensor_k*K_k;
+
+            //Get Velocities
+            btVector3 lV_j = body_j->getLinearVelocity();
+            btVector3 aV_j = body_j->getAngularVelocity();
+            btVector3 lV_k = body_k->getLinearVelocity();
+            btVector3 aV_k = body_k->getAngularVelocity();
+
+            // if first iteration reset applied impulse α1 (and α2) and compute tangent vectors t1 (and t2) for each contact
             if (i == 0){
                 contact.m_appliedImpulse = 0;
                 contact.m_appliedImpulseLateral1 = 0;
                 contact.m_appliedImpulseLateral2 = 0;
 
-                // relative velocity at the contact point v_r = derivative C_b
-                btVector3 v_r = (G_b*u).toBtVector3();
+                // relative velocity at the contact point v_r = derivative C_b = G_b*u
+                btVector3 v_r = lV_j-K_j*aV_j-lV_k+K_k*aV_k;
 
                 // tangent velocity v_T is the projection of v_r onto the tangent plane
                 btVector3 v_t = v_r - (v_r.dot(n))*n;
@@ -409,13 +278,16 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
 
             // CONTACT CORRECTION:
             if(getApplyContactCorrections()){     
-                cpMatrix worldDiff(3,1);
-                worldDiff.setWithBtVector3(((body_j->getCenterOfMassPosition() + R_j*r_j)-(body_k->getCenterOfMassPosition() + R_k*r_k)), 0, 0);
-                btScalar C =  (n_cp.transpose() * worldDiff)(0,0);
-                btScalar dC = (G * u)(0,0); //G * u is 1x1 (1x12 * 12x1 = 1x1)
+                btVector3 worldDiff = (body_j->getCenterOfMassPosition() + R_j*r_j)-(body_k->getCenterOfMassPosition() + R_k*r_k);
+                btScalar C =  n.dot(worldDiff);
+                btScalar dC = n.dot(lV_j)-n.dot(K_j*aV_j)-n.dot(lV_k)+n.dot(K_k*aV_k); //G*u 
 
                 if(C < 0 || (C==0 && dC<0)){ //Constraint is only violated when C negative or when C = 0 but dC<0
-                
+
+                    //We only need this S when we reach this conditional
+                    btScalar S = (m_inv_j + m_inv_k)*n.length2() - multiplyVector3withMatrix3x3FromBothSides(n, KJK_j)
+                                                                - multiplyVector3withMatrix3x3FromBothSides(n, KJK_k);
+
                     // This is analogous to ball joints; To test this let a box fall onto a plane from high up 
                     // => With Gamma = 0 it will clip into the plane but with Gamma > 0 it will correct itself
                     // A nice effect is: The higher gamma the more the objects bounce, with Gamma > 1 they will gain energy with each collision
@@ -428,37 +300,32 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
 
                     if(contact.m_appliedImpulse + impulse < 0) continue;
                     contact.m_appliedImpulse += impulse;
-
+    
                     //apply impulse
-                    cpMatrix M_invG_transposeDeltaLambda = M_inv * G.transpose() * impulse;
+                    body_j->setLinearVelocity(lV_j+m_inv_j*impulse*n);
+                    body_j->setAngularVelocity(aV_j+impulse*(tensor_j*K_j*n));
 
-                    applyImpulse(*body_j, *body_k, M_invG_transposeDeltaLambda);
+                    body_k->setLinearVelocity(lV_k-m_inv_k*impulse*n);
+                    body_k->setAngularVelocity(aV_k-impulse*(tensor_k*K_k*n));
                 }
             }
 
             // FRICTION CORRECTION:
             if(getApplyFrictionCorrections()) {
-                const auto t1 = contact.m_lateralFrictionDir1;
-                const auto t2 = contact.m_lateralFrictionDir2;
-
-                //Needed Variables
-                cpMatrix t1_cp(3,1);
-                t1_cp.setWithBtVector3(t1, 0, 0);
-                cpMatrix t2_cp(3,1);
-                t2_cp.setWithBtVector3(t2, 0, 0);
-
-                //Compute and apply delta_a1, delta_a2 etc.
-
-                //Calculate Gs
-                cpMatrix G1 = t1_cp.transpose() * G_b; // 1x12
-                cpMatrix G2 = t2_cp.transpose() * G_b;
+                auto t1 = contact.m_lateralFrictionDir1;
+                auto t2 = contact.m_lateralFrictionDir2;
 
                 //Calculate S = GM^-1G^T
-                btScalar S1 = (G1*M_inv*G1.transpose())(0,0); // The Product returns a 1x1 Matrix, which is why we just save S as a scalar
-                btScalar S2 = (G2*M_inv*G2.transpose())(0,0);
+                btScalar S1 = (m_inv_j + m_inv_k)*t1.length2() - multiplyVector3withMatrix3x3FromBothSides(t1, KJK_j)
+                                                         - multiplyVector3withMatrix3x3FromBothSides(t1, KJK_k);
+                btScalar S2 = (m_inv_j + m_inv_k)*t2.length2() - multiplyVector3withMatrix3x3FromBothSides(t2, KJK_j)
+                                                         - multiplyVector3withMatrix3x3FromBothSides(t2, KJK_k);
 
-                // Recalculate Impulse
-                u = computeConstraintVelocityMatrix(*body_j, *body_k);
+                // get new velocities, since we may have changed them for contact correction
+                lV_j = body_j->getLinearVelocity();
+                aV_j = body_j->getAngularVelocity();
+                lV_k = body_k->getLinearVelocity();
+                aV_k = body_k->getAngularVelocity();
 
                 auto mu = getMU();
                 auto lambda = contact.m_appliedImpulse;
@@ -466,8 +333,9 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
                 btScalar deltaA2 = 0;
                 if(S1 != 0){
                     auto& a1 = contact.m_appliedImpulseLateral1;
-                
-                    deltaA1 = ((G1 * u) * -1 * (1/S1))(0,0);
+
+                    btScalar dC1 = t1.dot(lV_j)-t1.dot(K_j*aV_j)-t1.dot(lV_k)+t1.dot(K_k*aV_k);
+                    deltaA1 = dC1 * -1 * (1/S1);
 
                     btClamp<btScalar>(deltaA1, -1 * (mu * lambda) - a1, (mu * lambda) - a1);
 
@@ -476,17 +344,20 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
                 if(S2 != 0){        
                     auto& a2 = contact.m_appliedImpulseLateral2;
 
-                    deltaA2 = ((G2 * u) * -1 * (1/S2))(0,0);
+                    btScalar dC2 = t2.dot(lV_j)-t2.dot(K_j*aV_j)-t2.dot(lV_k)+t2.dot(K_k*aV_k);
+                    deltaA2 = dC2 * -1 * (1/S2);
 
                     btClamp<btScalar>(deltaA2, -1 * (mu * lambda) - a2, (mu * lambda) - a2);
 
                     a2 += deltaA2;
                 }
 
-                cpMatrix M_invG_transposeDeltaLambda1 = M_inv * G1.transpose() * deltaA1; // 12x1
-                cpMatrix M_invG_transposeDeltaLambda2 = M_inv * G2.transpose() * deltaA2; // 12x1
+                //apply impulses
+                body_j->setLinearVelocity(lV_j+m_inv_j*(deltaA1*t1 + deltaA2*t2));
+                body_j->setAngularVelocity(aV_j+tensor_j*(K_j*t1*deltaA1 + K_j*t2*deltaA2));
 
-                applyImpulse(*body_j, *body_k, M_invG_transposeDeltaLambda1 + M_invG_transposeDeltaLambda2);
+                body_k->setLinearVelocity(lV_k-m_inv_k*(deltaA1*t1 + deltaA2*t2));
+                body_k->setAngularVelocity(aV_k-tensor_k*(K_k*t1*deltaA1 + K_k*t2*deltaA2));
             }
         }
     }
@@ -655,28 +526,45 @@ void CustomDynamicsWorld::applyImpulse(btRigidBody& body_j, btRigidBody& body_k,
     body_k.setAngularVelocity(body_k.getAngularVelocity() + impulse.getBtVector3(9,0));
 }
 
+/*calculates vec^T*mat*vec which isn't easily possible with only bullet datatypes
+
+Parameters
+vec      btVector3 that gets multiplied to the matrix.
+mat      btMatrix3x3 its obvious isnt it.
+
+Returns
+btScalar, since the dimensions are 1x3 * 3x3 * 3*1 = 1*1.*/
+btScalar CustomDynamicsWorld::multiplyVector3withMatrix3x3FromBothSides(btVector3& vec, btMatrix3x3& mat){
+    btScalar res = mat[0][0]*vec.getX()*vec.getX() + mat[1][1]*vec.getY()*vec.getY() + mat[2][2]*vec.getZ()*vec.getZ()
+                 + (mat[1][0]+mat[0][1])*vec.getX()*vec.getY()
+                 + (mat[2][0]+mat[0][2])*vec.getX()*vec.getZ()
+                 + (mat[2][1]+mat[1][2])*vec.getY()*vec.getZ();
+    return res;
+}
+
 #pragma endregion Helper_Functions
 #pragma region Prints
 
-void printVector(const btVector3& vector, char name) {
-    cout << name << ":"; 
-  for (int i = 0; i < 3; i++) {
-     cout << dec << vector[i] << ", ";
-  }
-  cout << endl;
+void CustomDynamicsWorld::printVector(const btVector3& vector, string name) {
+    cout << "Vector " << name << ":"; 
+    for (int i = 0; i < 3; i++) {
+        cout << dec << vector[i] << ", ";
+    }
+    cout << endl;
 }
 
-void printMatrix(const btMatrix3x3& matrix, char name) {
-    cout << name << ":"; 
+void CustomDynamicsWorld::printMatrix(const btMatrix3x3& matrix, string name) {
+    cout << "Matrix " << name << ":" << endl; 
     for (int row = 0; row < 3; row++) {
         for (int col = 0; col < 3; col++) {
             cout << dec << matrix[row][col] << ", ";
         }
         cout << endl;
     }
+    cout << endl;
 }
 
-void printQuat(const btQuaternion quat, char name) {
+void CustomDynamicsWorld::printQuat(const btQuaternion quat, string name) {
     cout << name << ": ("; 
     cout << dec << quat.w() << ", ";
     cout << dec << quat.x() << ", ";
