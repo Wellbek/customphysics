@@ -47,6 +47,8 @@ protected:
 
 	void frictionCorrection(std::vector<btPersistentManifold *> &constraints, btScalar timeStep);
 
+    void manifoldCorrection(vector<btPersistentManifold *> &manifolds, btScalar timeStep, int i);
+
 	//
 	void integrateConstrainedBodiesWithCustomPhysics(btScalar timeStep);
 
