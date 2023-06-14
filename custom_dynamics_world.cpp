@@ -294,11 +294,13 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
                     btScalar target_veclotiy = (-getGamma())*C*(1/timeStep) - dC;
 
                     btScalar impulse = 0;
-                    if(S != 0){ // S needs to be invertible and dont apply impulse if the bodies are moving apart (dc > 0)
+                    if(S != 0){ // S needs to be invertible
                         impulse = target_veclotiy * (1/S);
                     }
 
-                    if(contact.m_appliedImpulse + impulse < 0) continue;
+                    if(contact.m_appliedImpulse + impulse < 0) {
+                        impulse = -contact.m_appliedImpulse;
+                    }
                     contact.m_appliedImpulse += impulse;
     
                     //apply impulse
