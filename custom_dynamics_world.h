@@ -17,9 +17,10 @@ private:
     int m_constraint_iters;
     float m_gamma; // attenuator for drift correction per iteration
     float m_mu; // attenuator for friction correction per iteration
-    float m_apply_friction_constraints; // toggle to correct for friction
-    float m_apply_contact_constraints; // toggle to correct for collisions
-    float m_apply_ball_joints_constraints; // toggle to correct for ball joints
+    bool m_apply_friction_constraints; // toggle to correct for friction
+    bool m_apply_contact_constraints; // toggle to correct for collisions
+    bool m_apply_ball_joints_constraints; // toggle to correct for ball joints
+    bool m_warm_starting; // toggle to correct for ball joints
 
 public:
     CustomDynamicsWorld(btDispatcher* dispatcher,
@@ -49,6 +50,9 @@ public:
     void setApplyBallJointsCorrections(bool ball_joints) { m_apply_ball_joints_constraints = ball_joints; }
     bool getApplyBallJointsCorrections() const { return m_apply_ball_joints_constraints; }
 
+    void setWarmStarting(bool warm_starting) { m_warm_starting = warm_starting; }
+    bool getWarmStarting() const { return m_warm_starting; }
+
 protected:
     void internalSingleStepSimulation(btScalar timeStep) override;
 
@@ -74,6 +78,8 @@ protected:
     void printQuat(const btQuaternion quat, string name);
 };
 
-# define I btMatrix3x3::getIdentity()
+#define I btMatrix3x3::getIdentity()
+
+#define epsilon 0.0001f
 
 #endif // CUSTOM_DYNAMICS_WORLD_H

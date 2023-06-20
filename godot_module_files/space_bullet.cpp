@@ -619,15 +619,17 @@ void SpaceCustom::create_empty_world(bool p_create_soft_world) {
 		const int constraintIters = ProjectSettings::get_singleton()->get("physics/customphysics/constraint_iterations");
 		const float gamma = ProjectSettings::get_singleton()->get("physics/customphysics/gamma");
 		const float mu = ProjectSettings::get_singleton()->get("physics/customphysics/mu");
-		const float friction_correction = ProjectSettings::get_singleton()->get("physics/customphysics/friction_constraints");
-		const float contact_correction = ProjectSettings::get_singleton()->get("physics/customphysics/contact_constraints");
-		const float ball_joints_correction = ProjectSettings::get_singleton()->get("physics/customphysics/ball_joints_constraints");
+		const bool friction_correction = ProjectSettings::get_singleton()->get("physics/customphysics/friction_constraints");
+		const bool contact_correction = ProjectSettings::get_singleton()->get("physics/customphysics/contact_constraints");
+		const bool ball_joints_correction = ProjectSettings::get_singleton()->get("physics/customphysics/ball_joints_constraints");
+		const bool warm_starting = ProjectSettings::get_singleton()->get("physics/customphysics/warm_starting");
 		custom_world->setConstraintIterations(constraintIters);
 		custom_world->setGamma(gamma);
 		custom_world->setMU(mu);
 		custom_world->setApplyFrictionCorrections(friction_correction);
 		custom_world->setApplyContactCorrections(contact_correction);
 		custom_world->setApplyBallJointsCorrections(ball_joints_correction);
+		custom_world->setWarmStarting(warm_starting);
 
 		dynamicsWorld = custom_world;
 		soft_body_world_info = bulletnew(btSoftBodyWorldInfo);
