@@ -205,7 +205,7 @@ void CustomDynamicsWorld::point2PointConstraintCorrection(vector<btPoint2PointCo
 /*
 Combines contactCorrection and frictionCorrection as well as computation of t1, t2 to need to loop over all manifolds only once.
 */
-void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &manifolds, btScalar timeStep, int i){
+void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &manifolds, btScalar timeStep, int iteration){
     auto num_manifolds = this->getDispatcher()->getNumManifolds();
 
     for(size_t i = 0; i < num_manifolds; ++i){
@@ -257,12 +257,12 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
             btVector3 aV_k = body_k->getAngularVelocity();
 
             // if first iteration reset applied impulse α1 (and α2) and compute tangent vectors t1 (and t2) for each contact
-            if (i == 0){
+            if (iteration == 0){
 
-                if (!getWarmStarting()){
+                if (!getWarmStarting()){        
                     contact.m_appliedImpulse = 0;
                     contact.m_appliedImpulseLateral1 = 0;
-                    contact.m_appliedImpulseLateral2 = 0;
+                    contact.m_appliedImpulseLateral2 = 0;            
                 } else {
                     btScalar old_impulse = contact.m_appliedImpulse;
                     btScalar a1 = contact.m_appliedImpulseLateral1;
@@ -281,7 +281,6 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
                     lV_k = body_k->getLinearVelocity();
                     aV_k = body_k->getAngularVelocity();
                 }
-
 
                 // relative velocity at the contact point v_r = derivative C_b = G_b*u
                 btVector3 v_r = lV_j-K_j*aV_j-lV_k+K_k*aV_k;
@@ -303,13 +302,15 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
                 btScalar C =  n.dot(worldDiff);
                 btScalar dC = n.dot(lV_j)-n.dot(K_j*aV_j)-n.dot(lV_k)+n.dot(K_k*aV_k); //G*u 
 
-                /*if(i == 0){
+                if(iteration == 0){
                     btScalar stabilization = (-getGamma())*C*(1/timeStep);
                     btScalar restitution = (-contact.m_combinedRestitution) * dC;
-                    contact.m_targetVelocity = max(stabilization, restitution) - dC;
-                }*/
+                    contact.m_targetVelocity = max(stabilization, restitution);
+                    if(C > epsilon) contact.m_targetVelocity = 0;
+                    //cout << contact.m_targetVelocity << endl;
+                }
 
-                if(C < epsilon || (C > -epsilon && C < epsilon && dC < epsilon)){ //Constraint is only violated when C negative or when C = 0 but dC<0
+                if(C < -epsilon || (C > -epsilon && C < epsilon && dC < -epsilon)){ //Constraint is only violated when C negative or when C = 0 but dC<0
 
 
                     //We only need this S when we reach this conditional
@@ -319,11 +320,11 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
                     // This is analogous to ball joints; To test this let a box fall onto a plane from high up 
                     // => With Gamma = 0 it will clip into the plane but with Gamma > 0 it will correct itself
                     // A nice effect is: The higher gamma the more the objects bounce, with Gamma > 1 they will gain energy with each collision
-                    btScalar target_velocity = (-getGamma())*C*(1/timeStep) - dC;
+                    //btScalar target_velocity = (-getGamma())*C*(1/timeStep) - dC;
 
                     btScalar impulse = 0;
                     if(S != 0){ // S needs to be invertible
-                        impulse = target_velocity * (1/S);
+                        impulse = (contact.m_targetVelocity - dC) * (1/S);
                     }
 
                     if(contact.m_appliedImpulse + impulse < 0) {
