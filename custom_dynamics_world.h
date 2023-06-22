@@ -16,13 +16,15 @@ using namespace std;
 class CustomDynamicsWorld : public btSoftRigidDynamicsWorld {
 private:
     int m_constraint_iters;
+    int m_hinge_iters;
     float m_gamma; // attenuator for drift correction per iteration
     float m_mu; // attenuator for friction correction per iteration
     bool m_apply_friction_constraints; // toggle to correct for friction
     bool m_apply_contact_constraints; // toggle to correct for collisions
     bool m_apply_ball_joints_constraints; // toggle to correct for ball joints
     bool m_apply_hinge_joints_constraints;
-    bool m_warm_starting; // toggle to correct for ball joints
+    bool m_warm_starting;
+    bool m_hinge_with_2x2;
 
 public:
     CustomDynamicsWorld(btDispatcher* dispatcher,
@@ -31,12 +33,15 @@ public:
                         btCollisionConfiguration* collisionConfiguration,
                         btSoftBodySolver* softBodySolver = 0)
                             : btSoftRigidDynamicsWorld(dispatcher, pairCache, constraintSolver, collisionConfiguration, softBodySolver),
-                              m_constraint_iters(10), m_gamma(0.1f), m_mu(0.3f), 
+                              m_constraint_iters(10), m_hinge_iters(10), m_gamma(0.1f), m_mu(0.3f), 
                               m_apply_friction_constraints(true), m_apply_ball_joints_constraints(true), m_apply_contact_constraints(true),
-                              m_apply_hinge_joints_constraints(true), m_warm_starting(true) {}
+                              m_apply_hinge_joints_constraints(true), m_warm_starting(true), m_hinge_with_2x2(false) {}
 
     void setConstraintIterations(int iterations) { m_constraint_iters = iterations; }
     int getConstraintIterations() const { return m_constraint_iters; }
+
+    void setHingeIterations(int iterations) { m_hinge_iters = iterations; }
+    int getHingeIterations() const { return m_hinge_iters; }
 
     void setGamma(float gamma) { m_gamma = gamma; }
     float getGamma() const { return m_gamma; }
@@ -58,6 +63,9 @@ public:
 
     void setWarmStarting(bool warm_starting) { m_warm_starting = warm_starting; }
     bool getWarmStarting() const { return m_warm_starting; }
+
+    void setHingeWith2x2(bool hw2) { m_hinge_with_2x2 = hw2; }
+    bool getHingeWith2x2() const { return m_hinge_with_2x2; }
 
 protected:
     void internalSingleStepSimulation(btScalar timeStep) override;

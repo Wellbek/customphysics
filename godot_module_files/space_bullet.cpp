@@ -617,6 +617,7 @@ void SpaceCustom::create_empty_world(bool p_create_soft_world) {
 	if (p_create_soft_world) {
 		auto custom_world = new (world_mem) CustomDynamicsWorld(dispatcher, broadphase, solver, collisionConfiguration);
 		const int constraintIters = ProjectSettings::get_singleton()->get("physics/customphysics/constraint_iterations");
+		const int hingeIters = ProjectSettings::get_singleton()->get("physics/customphysics/hinge_iterations");
 		const float gamma = ProjectSettings::get_singleton()->get("physics/customphysics/gamma");
 		const float mu = ProjectSettings::get_singleton()->get("physics/customphysics/mu");
 		const bool friction_correction = ProjectSettings::get_singleton()->get("physics/customphysics/friction_constraints");
@@ -624,7 +625,9 @@ void SpaceCustom::create_empty_world(bool p_create_soft_world) {
 		const bool ball_joints_correction = ProjectSettings::get_singleton()->get("physics/customphysics/ball_joints_constraints");
 		const bool hinge_joints_correction = ProjectSettings::get_singleton()->get("physics/customphysics/hinge_joints_constraints");
 		const bool warm_starting = ProjectSettings::get_singleton()->get("physics/customphysics/warm_starting");
+		const bool hinge_with_2x2 = ProjectSettings::get_singleton()->get("physics/customphysics/hinge_with_2x2");
 		custom_world->setConstraintIterations(constraintIters);
+		custom_world->setHingeIterations(hingeIters);
 		custom_world->setGamma(gamma);
 		custom_world->setMU(mu);
 		custom_world->setApplyFrictionCorrections(friction_correction);
@@ -632,6 +635,7 @@ void SpaceCustom::create_empty_world(bool p_create_soft_world) {
 		custom_world->setApplyBallJointsCorrections(ball_joints_correction);
 		custom_world->setApplyHingeJointsCorrections(hinge_joints_correction);
 		custom_world->setWarmStarting(warm_starting);
+		custom_world->setHingeWith2x2(hinge_with_2x2);
 
 		dynamicsWorld = custom_world;
 		soft_body_world_info = bulletnew(btSoftBodyWorldInfo);

@@ -159,7 +159,7 @@ void CustomDynamicsWorld::hingeJointConstraintCorrection(vector<btHingeConstrain
     for (auto c : constraints){
         hingeBallJointConstraint(c, timeStep);
 
-        for(int i = 0; i < 10; i++){
+        for(int i = 0; i < getHingeIterations(); i++){
             hingeAxisConstraint(c, timeStep);
         }
     }
@@ -258,12 +258,16 @@ void CustomDynamicsWorld::hingeAxisConstraint(btHingeConstraint* c, btScalar tim
 
     btScalar impulse_p = 0;
     if(S_p != 0){
-        impulse_p = -dC_p * (1/S_p);
+        btScalar C = h_world.dot(R_k*p_k);
+        btScalar target_velocity = -getGamma()*C*(1/timeStep);
+        impulse_p = (target_velocity-dC_p) * (1/S_p);
     }
     
     btScalar impulse_q = 0;
     if(S_q != 0){
-        impulse_q = -dC_q * (1/S_q);
+        btScalar C = h_world.dot(R_k*q_k);
+        btScalar target_velocity = -getGamma()*C*(1/timeStep);
+        impulse_q = (target_velocity-dC_q) * (1/S_q);
     }
 
     //printVector(impulse_p, "impulse_p");

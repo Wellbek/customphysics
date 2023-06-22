@@ -58,6 +58,10 @@ void register_customphysics_types() {
 	ProjectSettings::get_singleton()->set_custom_property_info("physics/customphysics/constraint_iterations",
 			PropertyInfo(Variant::INT, "physics/customphysics/constraint_iterations"));
 
+	GLOBAL_DEF("physics/customphysics/hinge_iterations", 10);
+	ProjectSettings::get_singleton()->set_custom_property_info("physics/customphysics/hinge_iterations",
+			PropertyInfo(Variant::INT, "physics/customphysics/hinge_iterations"));
+
 	GLOBAL_DEF("physics/customphysics/gamma", 0.1f);
 	ProjectSettings::get_singleton()->set_custom_property_info("physics/customphysics/gamma",
 			PropertyInfo(Variant::REAL, "physics/customphysics/gamma"));
@@ -85,6 +89,10 @@ void register_customphysics_types() {
 	GLOBAL_DEF("physics/customphysics/warm_starting", true);
 	ProjectSettings::get_singleton()->set_custom_property_info("physics/customphysics/warm_starting",
 			PropertyInfo(Variant::BOOL, "physics/customphysics/warm_starting"));
+
+	GLOBAL_DEF("physics/customphysics/hinge_with_2x2", false);
+	ProjectSettings::get_singleton()->set_custom_property_info("physics/customphysics/hinge_with_2x2",
+			PropertyInfo(Variant::BOOL, "physics/customphysics/hinge_with_2x2"));
 #endif
 }
 
