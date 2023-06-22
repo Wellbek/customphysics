@@ -158,7 +158,9 @@ void CustomDynamicsWorld::hingeJointConstraintCorrection(vector<btHingeConstrain
     for (auto c : constraints){
         hingeBallJointConstraint(c, timeStep);
 
-        hingeAxisConstraint(c, timeStep);
+        for(int i = 0; i < 10; i++){
+            hingeAxisConstraint(c, timeStep);
+        }
     }
 }
 
@@ -241,15 +243,15 @@ void CustomDynamicsWorld::hingeAxisConstraint(btHingeConstraint* c, btScalar tim
     btVector3 aV_j = body_j.getAngularVelocity();
     btVector3 aV_k = body_k.getAngularVelocity();
 
-    btScalar dC_p = (K_p * h_world).dot(aV_k - aV_j);
-    btScalar dC_q = (K_q * h_world).dot(aV_k - aV_j);
+    btScalar dC_p = h_world.dot((K_p*(aV_j - aV_k)));
+    btScalar dC_q = h_world.dot((K_q*(aV_j - aV_k)));
 
     //printVector(dC_p, "dC_p");
 
-    btMatrix3x3 temp = K_p * (tensor_j - tensor_k) * K_p;
+    btMatrix3x3 temp = K_p * (tensor_j + tensor_k) * K_p;
     btScalar S_p = -multiplyVector3withMatrix3x3FromBothSides(h_world, temp);
     //cout << "S_p: " << S_p << endl;
-    temp = K_q * (tensor_j - tensor_k) * K_q;
+    temp = K_q * (tensor_j + tensor_k) * K_q;
     btScalar S_q = -multiplyVector3withMatrix3x3FromBothSides(h_world, temp);
     //cout << "S_q: " << S_q << endl;
 
@@ -269,10 +271,10 @@ void CustomDynamicsWorld::hingeAxisConstraint(btHingeConstraint* c, btScalar tim
     // printVector(tensor_j*K_p*local_h*impulse_p, "vel up, p");
     // printVector(tensor_k*K_q*local_h*impulse_q, "vel up, q");
 
-    body_j.setAngularVelocity(aV_j + tensor_j*K_p*h_world*impulse_p
-                                   + tensor_j*K_q*h_world*impulse_q);
-    body_k.setAngularVelocity(aV_k - tensor_k*K_p*h_world*impulse_p
-                                   - tensor_k*K_q*h_world*impulse_q);
+    body_j.setAngularVelocity(aV_j - tensor_j*K_p*h_world*impulse_p
+                                   - tensor_j*K_q*h_world*impulse_q);
+    body_k.setAngularVelocity(aV_k + tensor_k*K_p*h_world*impulse_p
+                                   + tensor_k*K_q*h_world*impulse_q);
 }
 
 
@@ -390,13 +392,13 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
                 btScalar C =  n.dot(worldDiff);
                 btScalar dC = n.dot(lV_j)-n.dot(K_j*aV_j)-n.dot(lV_k)+n.dot(K_k*aV_k); //G*u 
 
-                if(iteration == 0){
+                /*if(iteration == 0){
                     btScalar stabilization = (-getGamma())*C*(1/timeStep);
                     btScalar restitution = (-contact.m_combinedRestitution) * dC;
                     contact.m_targetVelocity = max(stabilization, restitution);
                     if(C > epsilon) contact.m_targetVelocity = 0;
                     //cout << contact.m_targetVelocity << endl;
-                }
+                }*/
 
                 if(C < -epsilon || (C > -epsilon && C < epsilon && dC < -epsilon)){ //Constraint is only violated when C negative or when C = 0 but dC<0
 
@@ -408,11 +410,11 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
                     // This is analogous to ball joints; To test this let a box fall onto a plane from high up 
                     // => With Gamma = 0 it will clip into the plane but with Gamma > 0 it will correct itself
                     // A nice effect is: The higher gamma the more the objects bounce, with Gamma > 1 they will gain energy with each collision
-                    //btScalar target_velocity = (-getGamma())*C*(1/timeStep) - dC;
+                    btScalar target_velocity = (-getGamma())*C*(1/timeStep);
 
                     btScalar impulse = 0;
                     if(S != 0){ // S needs to be invertible
-                        impulse = (contact.m_targetVelocity - dC) * (1/S);
+                        impulse = (target_velocity - dC) * (1/S);
                     }
 
                     if(contact.m_appliedImpulse + impulse < 0) {
