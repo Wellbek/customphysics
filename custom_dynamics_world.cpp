@@ -82,6 +82,7 @@ void CustomDynamicsWorld::sequentialImpulses(btScalar timeStep){
 
     //fetch all contact Manifolds
     auto manifolds = fetchManifolds(*this);
+    vector<btScalar> target_velocities;
 
     //2
     for (int i = 0; i < getConstraintIterations(); i++){  
@@ -90,7 +91,7 @@ void CustomDynamicsWorld::sequentialImpulses(btScalar timeStep){
 
         if(getApplyHingeJointsCorrections()) hingeJointConstraintCorrection(hinge_constraints, timeStep);
         // 2.2 Non-penetration and friction constraints
-        if(getApplyFrictionCorrections() || getApplyContactCorrections()) manifoldCorrection(manifolds, timeStep, i);
+        if(getApplyFrictionCorrections() || getApplyContactCorrections()) manifoldCorrection(manifolds, timeStep, i, target_velocities);
     }
 }
 
@@ -281,9 +282,10 @@ void CustomDynamicsWorld::hingeAxisConstraint(btHingeConstraint* c, btScalar tim
 /*
 Combines contactCorrection and frictionCorrection as well as computation of t1, t2 to need to loop over all manifolds only once.
 */
-void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &manifolds, btScalar timeStep, int iteration){
+void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &manifolds, btScalar timeStep, int iteration, vector<btScalar> &target_velocities){
     auto num_manifolds = this->getDispatcher()->getNumManifolds();
 
+    int tV_index = 0;
     for(size_t i = 0; i < num_manifolds; ++i){
         auto manifold = manifolds[i];
 
@@ -392,13 +394,14 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
                 btScalar C =  n.dot(worldDiff);
                 btScalar dC = n.dot(lV_j)-n.dot(K_j*aV_j)-n.dot(lV_k)+n.dot(K_k*aV_k); //G*u 
 
-                /*if(iteration == 0){
+                if(iteration == 0){
                     btScalar stabilization = (-getGamma())*C*(1/timeStep);
                     btScalar restitution = (-contact.m_combinedRestitution) * dC;
-                    contact.m_targetVelocity = max(stabilization, restitution);
-                    if(C > epsilon) contact.m_targetVelocity = 0;
+                    btScalar tV = max(stabilization, restitution);
+                    if(C > epsilon) tV = 0;
+                    target_velocities.push_back(tV);
                     //cout << contact.m_targetVelocity << endl;
-                }*/
+                }
 
                 if(C < -epsilon || (C > -epsilon && C < epsilon && dC < -epsilon)){ //Constraint is only violated when C negative or when C = 0 but dC<0
 
@@ -414,7 +417,7 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
 
                     btScalar impulse = 0;
                     if(S != 0){ // S needs to be invertible
-                        impulse = (target_velocity - dC) * (1/S);
+                        impulse = (target_velocities.at(tV_index+c) - dC) * (1/S);
                     }
 
                     if(contact.m_appliedImpulse + impulse < 0) {
@@ -483,6 +486,8 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
                 body_k->setAngularVelocity(aV_k-tensor_k*(K_k*t1*deltaA1 + K_k*t2*deltaA2));
             }
         }
+
+        tV_index += manifold->getNumContacts();
     }
 }
 

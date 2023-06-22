@@ -72,7 +72,7 @@ protected:
 
     void hingeAxisConstraint(btHingeConstraint* c, btScalar timeStep);
 
-    void manifoldCorrection(vector<btPersistentManifold *> &manifolds, btScalar timeStep, int i);
+    void manifoldCorrection(vector<btPersistentManifold *> &manifolds, btScalar timeStep, int iteration,  vector<btScalar> &target_velocities);
 
 	//
 	void integrateConstrainedBodiesWithCustomPhysics(btScalar timeStep);
