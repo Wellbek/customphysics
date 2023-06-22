@@ -13,6 +13,10 @@
 
 using namespace std;
 
+#define I btMatrix3x3::getIdentity()
+
+#define epsilon 0.000001f
+
 class CustomDynamicsWorld : public btSoftRigidDynamicsWorld {
 private:
     int m_constraint_iters;
@@ -91,15 +95,13 @@ protected:
     cpMatrix computeInverseMassMatrix(btRigidBody body_j, btRigidBody body_k);
     cpMatrix computeConstraintVelocityMatrix(btRigidBody body_j, btRigidBody body_k);
     void applyImpulse(btRigidBody& body_j, btRigidBody& body_k, cpMatrix impulse);
+    bool isZero(btScalar z){ return (z > -epsilon && z < epsilon);}
+    bool isZero(btVector3 v){ return (v.length2() > -epsilon && v.length2() < epsilon);}
 
     //Prints:
     void printVector(const btVector3& vector, string name);
     void printMatrix(const btMatrix3x3& matrix, string name);
     void printQuat(const btQuaternion quat, string name);
 };
-
-#define I btMatrix3x3::getIdentity()
-
-#define epsilon 0.0001f
 
 #endif // CUSTOM_DYNAMICS_WORLD_H

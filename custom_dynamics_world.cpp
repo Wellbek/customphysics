@@ -141,9 +141,11 @@ void CustomDynamicsWorld::point2PointConstraintCorrection(vector<btPoint2PointCo
         btVector3 target_velocity = (-getGamma())*C*(1/timeStep) - dC;
 
         btVector3 impulse = {0,0,0};
-        if(S.determinant() != 0){
+        if(!isZero(S.determinant())){
             impulse = S.inverse() * target_velocity;
         }
+
+        if(isZero(impulse)) continue;
 
         // 2.3
         body_j.setLinearVelocity(lV_j + m_inv_j*impulse);
@@ -203,15 +205,17 @@ void CustomDynamicsWorld::hingeBallJointConstraint(btHingeConstraint* c, btScala
     btVector3 target_velocity = (-getGamma())*C*(1/timeStep) - dC;
 
     btVector3 impulse = {0,0,0};
-    if(S.determinant() != 0){
+    if(!isZero(S.determinant())){
         impulse = S.inverse() * target_velocity;
     }
 
-    body_j.setLinearVelocity(lV_j + m_inv_j*impulse);
-    body_j.setAngularVelocity(aV_j + tensor_j*K_j*impulse);
+    if(!isZero(impulse)){
+        body_j.setLinearVelocity(lV_j + m_inv_j*impulse);
+        body_j.setAngularVelocity(aV_j + tensor_j*K_j*impulse);
 
-    body_k.setLinearVelocity(lV_k - m_inv_k*impulse);
-    body_k.setAngularVelocity(aV_k - tensor_k*K_k*impulse);
+        body_k.setLinearVelocity(lV_k - m_inv_k*impulse);
+        body_k.setAngularVelocity(aV_k - tensor_k*K_k*impulse);
+    }
 }
 
 void CustomDynamicsWorld::hingeAxisConstraint(btHingeConstraint* c, btScalar timeStep){
@@ -257,18 +261,19 @@ void CustomDynamicsWorld::hingeAxisConstraint(btHingeConstraint* c, btScalar tim
     //cout << "S_q: " << S_q << endl;
 
     btScalar impulse_p = 0;
-    if(S_p != 0){
+    if(!isZero(S_p)){
         btScalar C = h_world.dot(R_k*p_k);
         btScalar target_velocity = -getGamma()*C*(1/timeStep);
         impulse_p = (target_velocity-dC_p) * (1/S_p);
     }
     
     btScalar impulse_q = 0;
-    if(S_q != 0){
+    if(!isZero(S_q)){
         btScalar C = h_world.dot(R_k*q_k);
         btScalar target_velocity = -getGamma()*C*(1/timeStep);
         impulse_q = (target_velocity-dC_q) * (1/S_q);
     }
+
 
     //printVector(impulse_p, "impulse_p");
     //printVector(impulse_q, "impulse_q");
@@ -276,10 +281,12 @@ void CustomDynamicsWorld::hingeAxisConstraint(btHingeConstraint* c, btScalar tim
     // printVector(tensor_j*K_p*local_h*impulse_p, "vel up, p");
     // printVector(tensor_k*K_q*local_h*impulse_q, "vel up, q");
 
-    body_j.setAngularVelocity(aV_j - tensor_j*K_p*h_world*impulse_p
-                                   - tensor_j*K_q*h_world*impulse_q);
-    body_k.setAngularVelocity(aV_k + tensor_k*K_p*h_world*impulse_p
-                                   + tensor_k*K_q*h_world*impulse_q);
+    if(!(isZero(impulse_p) && isZero(impulse_q))){
+        body_j.setAngularVelocity(aV_j - tensor_j*K_p*h_world*impulse_p
+                                    - tensor_j*K_q*h_world*impulse_q);
+        body_k.setAngularVelocity(aV_k + tensor_k*K_p*h_world*impulse_p
+                                    + tensor_k*K_q*h_world*impulse_q);
+    }
 }
 
 
@@ -407,7 +414,7 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
                     //cout << contact.m_targetVelocity << endl;
                 }
 
-                if(C < -epsilon || (C > -epsilon && C < epsilon && dC < -epsilon)){ //Constraint is only violated when C negative or when C = 0 but dC<0
+                if(C < -epsilon || (isZero(C) && dC < -epsilon)){ //Constraint is only violated when C negative or when C = 0 but dC<0
 
 
                     //We only need this S when we reach this conditional
@@ -420,9 +427,11 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
                     btScalar target_velocity = (-getGamma())*C*(1/timeStep);
 
                     btScalar impulse = 0;
-                    if(S != 0){ // S needs to be invertible
+                    if(!isZero(S)){ // S needs to be invertible
                         impulse = (target_velocities.at(tV_index+c) - dC) * (1/S);
                     }
+
+                    if(isZero(impulse)) continue;
 
                     if(contact.m_appliedImpulse + impulse < 0) {
                         impulse = -contact.m_appliedImpulse;
@@ -461,7 +470,7 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
                 auto lambda = contact.m_appliedImpulse;
                 btScalar deltaA1 = 0;
                 btScalar deltaA2 = 0;
-                if(S1 != 0){
+                if(!isZero(S1)){
                     auto& a1 = contact.m_appliedImpulseLateral1;
 
                     btScalar dC1 = t1.dot(lV_j)-t1.dot(K_j*aV_j)-t1.dot(lV_k)+t1.dot(K_k*aV_k);
@@ -469,9 +478,10 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
 
                     btClamp<btScalar>(deltaA1, -1 * (mu * lambda) - a1, (mu * lambda) - a1);
 
+                    if(isZero(deltaA1)) deltaA1 = 0;
                     a1 += deltaA1;
                 }
-                if(S2 != 0){        
+                if(!isZero(S2)){        
                     auto& a2 = contact.m_appliedImpulseLateral2;
 
                     btScalar dC2 = t2.dot(lV_j)-t2.dot(K_j*aV_j)-t2.dot(lV_k)+t2.dot(K_k*aV_k);
@@ -479,6 +489,7 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
 
                     btClamp<btScalar>(deltaA2, -1 * (mu * lambda) - a2, (mu * lambda) - a2);
 
+                    if(isZero(deltaA2)) deltaA2 = 0;
                     a2 += deltaA2;
                 }
 
