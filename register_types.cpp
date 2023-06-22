@@ -77,6 +77,10 @@ void register_customphysics_types() {
 	GLOBAL_DEF("physics/customphysics/ball_joints_constraints", true);
 	ProjectSettings::get_singleton()->set_custom_property_info("physics/customphysics/ball_joints_constraints",
 			PropertyInfo(Variant::BOOL, "physics/customphysics/ball_joints_constraints"));
+
+	GLOBAL_DEF("physics/customphysics/hinge_joints_constraints", true);
+	ProjectSettings::get_singleton()->set_custom_property_info("physics/customphysics/hinge_joints_constraints",
+			PropertyInfo(Variant::BOOL, "physics/customphysics/hinge_joints_constraints"));
 			
 	GLOBAL_DEF("physics/customphysics/warm_starting", true);
 	ProjectSettings::get_singleton()->set_custom_property_info("physics/customphysics/warm_starting",

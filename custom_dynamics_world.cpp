@@ -69,76 +69,27 @@ void CustomDynamicsWorld::sequentialImpulses(btScalar timeStep){
     // filter out the btPoint2PointConstraint instances:
     const auto num_constraints = this->getNumConstraints();
     vector<btPoint2PointConstraint *> point_constraints;
+    vector<btHingeConstraint *> hinge_constraints;
 
     for (int i = 0; i < num_constraints; ++i){
         auto c = this->getConstraint(i);
         if(c->getConstraintType() == POINT2POINT_CONSTRAINT_TYPE){
             point_constraints.push_back(dynamic_cast<btPoint2PointConstraint *>(c));
+        }else if(c->getConstraintType() == HINGE_CONSTRAINT_TYPE){
+            hinge_constraints.push_back(dynamic_cast<btHingeConstraint *>(c));
         }
     }
 
     //fetch all contact Manifolds
     auto manifolds = fetchManifolds(*this);
-    // //reset applied_impulse
-    // for(size_t i = 0; i < this->getDispatcher()->getNumManifolds(); ++i){
-    //     auto manifold = manifolds[i];
-        
-    //     auto body_j = btRigidBody::upcast((manifold->getBody0()));
-    //     auto body_k = btRigidBody::upcast((manifold->getBody1()));
-
-    //     const auto is_rigidJ = body_j != nullptr;
-    //     const auto is_rigidK = body_k != nullptr;
-
-    //     if(!is_rigidJ || !is_rigidK) {
-    //         //Only do contact handling when both bodies are Rigidbodies
-            
-    //         // remove from manifold list here to later only work with valid manifolds
-    //         manifolds.erase(manifolds.begin() + i);
-    //         continue;
-    //     }
-
-    //     // 1
-    //     const auto num_contacts = manifold->getNumContacts();
-    //     for(int c = 0; c < num_contacts; ++c){
-    //         auto& contact = manifold->getContactPoint(c);
-    //         const auto n = contact.m_normalWorldOnB;
-    //         contact.m_appliedImpulse = 0;
-    //         contact.m_appliedImpulseLateral1 = 0;
-    //         contact.m_appliedImpulseLateral2 = 0;
-
-    //         // compute constraint vecloity map G_b
-    //         const auto r_j = contact.m_localPointA;
-    //         const auto r_k = contact.m_localPointB;
-    //         const auto R_j = body_j->getWorldTransform().getBasis();
-    //         const auto R_k = body_k->getWorldTransform().getBasis();
-    //         cpMatrix G_b = computeConstraintVelocityMap(R_j, R_k, r_j, r_k);
-
-    //         cpMatrix u = computeConstraintVelocityMatrix(*body_j, *body_k);
-
-    //         // relative velocity at the contact point v_r = derivative C_b
-    //         btVector3 v_r = (G_b*u).toBtVector3();
-
-    //         // tangent velocity v_T is the projection of v_r onto the tangent plane
-    //         btVector3 v_t = v_r - (v_r.dot(n))*n;
-
-    //         if(v_t.length() == 0) contact.m_lateralFrictionDir1 = {0,0,0};
-    //         else contact.m_lateralFrictionDir1 = v_t / v_t.length();
-            
-    //         contact.m_lateralFrictionDir2 = n.cross(contact.m_lateralFrictionDir1);
-
-    //         if(contact.m_lateralFrictionDir2.length() != 0) contact.m_lateralFrictionDir2.normalize();
-    //     }
-    // }
 
     //2
     for (int i = 0; i < getConstraintIterations(); i++){  
-        //2.1 Ball joint constraints
+        //2.1 Ball joints constraints
         if(getApplyBallJointsCorrections()) point2PointConstraintCorrection(point_constraints, timeStep);
 
-        // 2.2 Non-penetration constraints
-        // if(getApplyContactCorrections()) contactCorrection(manifolds, timeStep);
-        // 2.3 Coulomb friction
-        // if(getApplyFrictionCorrections()) frictionCorrection(manifolds, timeStep);
+        if(getApplyHingeJointsCorrections()) hingeJointConstraintCorrection(hinge_constraints, timeStep);
+        // 2.2 Non-penetration and friction constraints
         if(getApplyFrictionCorrections() || getApplyContactCorrections()) manifoldCorrection(manifolds, timeStep, i);
     }
 }
@@ -202,6 +153,129 @@ void CustomDynamicsWorld::point2PointConstraintCorrection(vector<btPoint2PointCo
     }
 }
 
+/**/
+void CustomDynamicsWorld::hingeJointConstraintCorrection(vector<btHingeConstraint *> &constraints, btScalar timeStep){
+    for (auto c : constraints){
+        hingeBallJointConstraint(c, timeStep);
+
+        hingeAxisConstraint(c, timeStep);
+    }
+}
+
+void CustomDynamicsWorld::hingeBallJointConstraint(btHingeConstraint* c, btScalar timeStep){
+    btRigidBody& body_j = c->getRigidBodyA();
+    btRigidBody& body_k = c->getRigidBodyB();
+
+    const auto r_j = c->getFrameOffsetA().getOrigin(); // Ball joint connection point for body j
+    const auto r_k = c->getFrameOffsetB().getOrigin(); // Ball joint connection point for body k
+    const auto R_j = body_j.getWorldTransform().getBasis();
+    const auto R_k = body_k.getWorldTransform().getBasis();
+    
+    const auto m_inv_j = body_j.getInvMass();
+    const auto m_inv_k = body_k.getInvMass();
+
+    auto tensor_j = body_j.getInvInertiaTensorWorld();
+    auto tensor_k = body_k.getInvInertiaTensorWorld();
+
+    btVector3 v1,v2,v3;
+    (R_j * r_j).getSkewSymmetricMatrix(&v1,&v2,&v3);
+    btMatrix3x3 K_j = btMatrix3x3(v1,v2,v3);
+    (R_k * r_k).getSkewSymmetricMatrix(&v1,&v2,&v3);
+    btMatrix3x3 K_k = btMatrix3x3(v1,v2,v3);
+
+    //Calculate S = GM^-1G^T
+    btMatrix3x3 S = I*(m_inv_j+m_inv_k) - K_j*tensor_j*K_j - K_k*tensor_k*K_k;
+
+    //Get Velocities
+    btVector3 lV_j = body_j.getLinearVelocity();
+    btVector3 aV_j = body_j.getAngularVelocity();
+    btVector3 lV_k = body_k.getLinearVelocity();
+    btVector3 aV_k = body_k.getAngularVelocity();
+
+    //Calculate impulse
+    btVector3 dC = lV_j-K_j*aV_j-lV_k+K_k*aV_k; // G*u
+    
+    btVector3 C = (body_j.getCenterOfMassPosition() + R_j*r_j)-(body_k.getCenterOfMassPosition() + R_k*r_k);
+
+    btVector3 target_velocity = (-getGamma())*C*(1/timeStep) - dC;
+
+    btVector3 impulse = {0,0,0};
+    if(S.determinant() != 0){
+        impulse = S.inverse() * target_velocity;
+    }
+
+    body_j.setLinearVelocity(lV_j + m_inv_j*impulse);
+    body_j.setAngularVelocity(aV_j + tensor_j*K_j*impulse);
+
+    body_k.setLinearVelocity(lV_k - m_inv_k*impulse);
+    body_k.setAngularVelocity(aV_k - tensor_k*K_k*impulse);
+}
+
+void CustomDynamicsWorld::hingeAxisConstraint(btHingeConstraint* c, btScalar timeStep){
+    btRigidBody& body_j = c->getRigidBodyA();
+    btRigidBody& body_k = c->getRigidBodyB();
+
+    const auto R_j = body_j.getWorldTransform().getBasis();
+    const auto R_k = body_k.getWorldTransform().getBasis();
+
+    // Bullet stores the orthogonal basis p, q, h as columns of an "offset frame" basis
+    const auto h_j = c->getFrameOffsetA().getBasis().getColumn(2);
+    const auto p_k = c->getFrameOffsetB().getBasis().getColumn(0);
+    const auto q_k = c->getFrameOffsetB().getBasis().getColumn(1);
+
+    //printVector(h_j, "h");
+    //printVector(p_k, "p");
+    //printVector(q_k, "q");
+
+    auto tensor_j = body_j.getInvInertiaTensorWorld();
+    auto tensor_k = body_k.getInvInertiaTensorWorld();
+
+    btVector3 v1,v2,v3;
+    (R_k * p_k).getSkewSymmetricMatrix(&v1,&v2,&v3);
+    btMatrix3x3 K_p = btMatrix3x3(v1,v2,v3);
+    (R_k * q_k).getSkewSymmetricMatrix(&v1,&v2,&v3);
+    btMatrix3x3 K_q = btMatrix3x3(v1,v2,v3);
+    btVector3 h_world = R_j * h_j;
+    
+    //Get Velocities
+    btVector3 aV_j = body_j.getAngularVelocity();
+    btVector3 aV_k = body_k.getAngularVelocity();
+
+    btScalar dC_p = (K_p * h_world).dot(aV_k - aV_j);
+    btScalar dC_q = (K_q * h_world).dot(aV_k - aV_j);
+
+    //printVector(dC_p, "dC_p");
+
+    btMatrix3x3 temp = K_p * (tensor_j - tensor_k) * K_p;
+    btScalar S_p = -multiplyVector3withMatrix3x3FromBothSides(h_world, temp);
+    //cout << "S_p: " << S_p << endl;
+    temp = K_q * (tensor_j - tensor_k) * K_q;
+    btScalar S_q = -multiplyVector3withMatrix3x3FromBothSides(h_world, temp);
+    //cout << "S_q: " << S_q << endl;
+
+    btScalar impulse_p = 0;
+    if(S_p != 0){
+        impulse_p = -dC_p * (1/S_p);
+    }
+    
+    btScalar impulse_q = 0;
+    if(S_q != 0){
+        impulse_q = -dC_q * (1/S_q);
+    }
+
+    //printVector(impulse_p, "impulse_p");
+    //printVector(impulse_q, "impulse_q");
+
+    // printVector(tensor_j*K_p*local_h*impulse_p, "vel up, p");
+    // printVector(tensor_k*K_q*local_h*impulse_q, "vel up, q");
+
+    body_j.setAngularVelocity(aV_j + tensor_j*K_p*h_world*impulse_p
+                                   + tensor_j*K_q*h_world*impulse_q);
+    body_k.setAngularVelocity(aV_k - tensor_k*K_p*h_world*impulse_p
+                                   - tensor_k*K_q*h_world*impulse_q);
+}
+
+
 /*
 Combines contactCorrection and frictionCorrection as well as computation of t1, t2 to need to loop over all manifolds only once.
 */
@@ -232,8 +306,8 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
 
             const auto r_j = contact.m_localPointA;
             const auto r_k = contact.m_localPointB;
-            const auto R_j = body_j->getWorldTransform().getBasis();
-            const auto R_k = body_k->getWorldTransform().getBasis();
+            auto R_j = body_j->getWorldTransform().getBasis();
+            auto R_k = body_k->getWorldTransform().getBasis();
 
             const auto m_inv_j = body_j->getInvMass();
             const auto m_inv_k = body_k->getInvMass();
@@ -247,9 +321,6 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
             (R_k * r_k).getSkewSymmetricMatrix(&v1,&v2,&v3);
             btMatrix3x3 K_k = btMatrix3x3(v1,v2,v3);
 
-            auto KJK_j = K_j*tensor_j*K_j;
-            auto KJK_k = K_k*tensor_k*K_k;
-
             //Get Velocities
             btVector3 lV_j = body_j->getLinearVelocity();
             btVector3 aV_j = body_j->getAngularVelocity();
@@ -257,13 +328,29 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
             btVector3 aV_k = body_k->getAngularVelocity();
 
             // if first iteration reset applied impulse α1 (and α2) and compute tangent vectors t1 (and t2) for each contact
-            if (iteration == 0){
+            if (iteration == 0){                  
+                // relative velocity at the contact point v_r = derivative C_b = G_b*u
+                btVector3 v_r = lV_j-K_j*aV_j-lV_k+K_k*aV_k;
 
-                if (!getWarmStarting()){        
+                // tangent velocity v_T is the projection of v_r onto the tangent plane
+                btVector3 v_t = v_r - (v_r.dot(n))*n;
+
+                if(v_t.length() == 0) contact.m_lateralFrictionDir1 = v_t;
+                else contact.m_lateralFrictionDir1 = v_t / v_t.length();
+                
+                contact.m_lateralFrictionDir2 = n.cross(contact.m_lateralFrictionDir1);
+                if(contact.m_lateralFrictionDir2.length() != 0) contact.m_lateralFrictionDir2.normalize();
+
+                btVector3 worldDiff = (body_j->getCenterOfMassPosition() + R_j*r_j)-(body_k->getCenterOfMassPosition() + R_k*r_k);
+                btScalar C =  n.dot(worldDiff);
+                btScalar dC = n.dot(lV_j)-n.dot(K_j*aV_j)-n.dot(lV_k)+n.dot(K_k*aV_k);
+                
+
+                if (!getWarmStarting()){
                     contact.m_appliedImpulse = 0;
                     contact.m_appliedImpulseLateral1 = 0;
-                    contact.m_appliedImpulseLateral2 = 0;            
-                } else {
+                    contact.m_appliedImpulseLateral2 = 0;
+                } else{
                     btScalar old_impulse = contact.m_appliedImpulse;
                     btScalar a1 = contact.m_appliedImpulseLateral1;
                     btScalar a2 = contact.m_appliedImpulseLateral2;
@@ -274,27 +361,28 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
 
                     body_k->setLinearVelocity(lV_k-m_inv_k*old_impulse*n - m_inv_k*(a1*t1 + a2*t2));
                     body_k->setAngularVelocity(aV_k-old_impulse*(tensor_k*K_k*n) - tensor_k*(K_k*t1*a1 + K_k*t2*a2));
-                                
+                    
                     //Update Velocity Variables
                     lV_j = body_j->getLinearVelocity();
                     aV_j = body_j->getAngularVelocity();
                     lV_k = body_k->getLinearVelocity();
                     aV_k = body_k->getAngularVelocity();
-                }
+                    
+                    R_j = body_j->getWorldTransform().getBasis();
+                    R_k = body_k->getWorldTransform().getBasis();
 
-                // relative velocity at the contact point v_r = derivative C_b = G_b*u
-                btVector3 v_r = lV_j-K_j*aV_j-lV_k+K_k*aV_k;
+                    tensor_j = body_j->getInvInertiaTensorWorld();
+                    tensor_k = body_k->getInvInertiaTensorWorld();
 
-                // tangent velocity v_T is the projection of v_r onto the tangent plane
-                btVector3 v_t = v_r - (v_r.dot(n))*n;
-
-                if(v_t.length() == 0) contact.m_lateralFrictionDir1 = {1,0,0};
-                else contact.m_lateralFrictionDir1 = v_t / v_t.length();
-                
-                contact.m_lateralFrictionDir2 = n.cross(contact.m_lateralFrictionDir1);
-
-                if(contact.m_lateralFrictionDir2.length() != 0) contact.m_lateralFrictionDir2.normalize();
+                    (R_j * r_j).getSkewSymmetricMatrix(&v1,&v2,&v3);
+                    K_j = btMatrix3x3(v1,v2,v3);
+                    (R_k * r_k).getSkewSymmetricMatrix(&v1,&v2,&v3);
+                    K_k = btMatrix3x3(v1,v2,v3);
+                } 
             }
+            
+            auto KJK_j = K_j*tensor_j*K_j;
+            auto KJK_k = K_k*tensor_k*K_k;
 
             // CONTACT CORRECTION:
             if(getApplyContactCorrections()){     
@@ -351,6 +439,8 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
                                                          - multiplyVector3withMatrix3x3FromBothSides(t1, KJK_k);
                 btScalar S2 = (m_inv_j + m_inv_k)*t2.length2() - multiplyVector3withMatrix3x3FromBothSides(t2, KJK_j)
                                                          - multiplyVector3withMatrix3x3FromBothSides(t2, KJK_k);
+
+                //cout << "S1: " << S1 << endl;
 
                 // get new velocities, since we may have changed them for contact correction
                 lV_j = body_j->getLinearVelocity();

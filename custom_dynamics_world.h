@@ -4,6 +4,7 @@
 #include "cpMatrix.h"
 #include <BulletSoftBody/btSoftRigidDynamicsWorld.h>
 #include <BulletDynamics/ConstraintSolver/btPoint2PointConstraint.h>
+#include <BulletDynamics/ConstraintSolver/btHingeConstraint.h>
 
 #include <vector>
 #include <iostream>
@@ -20,6 +21,7 @@ private:
     bool m_apply_friction_constraints; // toggle to correct for friction
     bool m_apply_contact_constraints; // toggle to correct for collisions
     bool m_apply_ball_joints_constraints; // toggle to correct for ball joints
+    bool m_apply_hinge_joints_constraints;
     bool m_warm_starting; // toggle to correct for ball joints
 
 public:
@@ -30,7 +32,8 @@ public:
                         btSoftBodySolver* softBodySolver = 0)
                             : btSoftRigidDynamicsWorld(dispatcher, pairCache, constraintSolver, collisionConfiguration, softBodySolver),
                               m_constraint_iters(10), m_gamma(0.1f), m_mu(0.3f), 
-                              m_apply_friction_constraints(true), m_apply_ball_joints_constraints(true), m_apply_contact_constraints(true) {}
+                              m_apply_friction_constraints(true), m_apply_ball_joints_constraints(true), m_apply_contact_constraints(true),
+                              m_apply_hinge_joints_constraints(true), m_warm_starting(true) {}
 
     void setConstraintIterations(int iterations) { m_constraint_iters = iterations; }
     int getConstraintIterations() const { return m_constraint_iters; }
@@ -50,6 +53,9 @@ public:
     void setApplyBallJointsCorrections(bool ball_joints) { m_apply_ball_joints_constraints = ball_joints; }
     bool getApplyBallJointsCorrections() const { return m_apply_ball_joints_constraints; }
 
+    void setApplyHingeJointsCorrections(bool hinge_joints) { m_apply_hinge_joints_constraints = hinge_joints; }
+    bool getApplyHingeJointsCorrections() const { return m_apply_hinge_joints_constraints; }
+
     void setWarmStarting(bool warm_starting) { m_warm_starting = warm_starting; }
     bool getWarmStarting() const { return m_warm_starting; }
 
@@ -59,6 +65,12 @@ protected:
 	void sequentialImpulses(btScalar timeStep);
 
 	void point2PointConstraintCorrection(std::vector<btPoint2PointConstraint *> &constraints, btScalar timeStep);
+
+    void hingeJointConstraintCorrection(std::vector<btHingeConstraint *> &constraints, btScalar timeStep);
+
+    void hingeBallJointConstraint(btHingeConstraint* c, btScalar timeStep);
+
+    void hingeAxisConstraint(btHingeConstraint* c, btScalar timeStep);
 
     void manifoldCorrection(vector<btPersistentManifold *> &manifolds, btScalar timeStep, int i);
 
