@@ -36,6 +36,26 @@ cpMatrix cpMatrix::transpose(){
     return res;
 }
 
+cpMatrix cpMatrix::invert2x2(){
+    cpMatrix res(2,2);
+    if(n != 2 || m != 2) return res;
+    float det = this->det2x2();
+    if(det == 0) return res;
+
+    res(0,0) = (*this)(1,1);
+    res(0,1) = -(*this)(0,1);
+    res(1,0) = -(*this)(1,0);
+    res(1,1) = (*this)(0,0);
+    res = res * (1/det);
+
+    return res;
+}
+
+float cpMatrix::det2x2(){
+    if(n != 2 || m != 2) return 0;
+    return (*this)(0,0)*(*this)(1,1)-(*this)(0,1)*(*this)(1,0);
+}
+
 /*turns 3x3 cpMatrix to btMatrix3x3
 if the format is not 3x3 it will return the 3x3 identity matrix*/
 btMatrix3x3 cpMatrix::toBtMatrix3x3(){

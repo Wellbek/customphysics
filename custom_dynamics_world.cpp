@@ -161,8 +161,12 @@ void CustomDynamicsWorld::hingeJointConstraintCorrection(vector<btHingeConstrain
     for (auto c : constraints){
         hingeBallJointConstraint(c, timeStep);
 
-        for(int i = 0; i < getHingeIterations(); i++){
-            hingeAxisConstraint(c, timeStep);
+        if(getHingeWith2x2()){
+            hingeCombinedAxisConstraint(c, timeStep);
+        }else{
+            for(int i = 0; i < getHingeIterations(); i++){
+                hingeIndividualAxisConstraint(c, timeStep);
+            }
         }
     }
 }
@@ -218,7 +222,7 @@ void CustomDynamicsWorld::hingeBallJointConstraint(btHingeConstraint* c, btScala
     }
 }
 
-void CustomDynamicsWorld::hingeAxisConstraint(btHingeConstraint* c, btScalar timeStep){
+void CustomDynamicsWorld::hingeCombinedAxisConstraint(btHingeConstraint* c, btScalar timeStep){
     btRigidBody& body_j = c->getRigidBodyA();
     btRigidBody& body_k = c->getRigidBodyB();
 
@@ -230,9 +234,63 @@ void CustomDynamicsWorld::hingeAxisConstraint(btHingeConstraint* c, btScalar tim
     const auto p_k = c->getFrameOffsetB().getBasis().getColumn(0);
     const auto q_k = c->getFrameOffsetB().getBasis().getColumn(1);
 
-    //printVector(h_j, "h");
-    //printVector(p_k, "p");
-    //printVector(q_k, "q");
+    auto tensor_j = body_j.getInvInertiaTensorWorld();
+    auto tensor_k = body_k.getInvInertiaTensorWorld();
+
+    btVector3 v1,v2,v3;
+    (R_k * p_k).getSkewSymmetricMatrix(&v1,&v2,&v3);
+    btMatrix3x3 K_p = btMatrix3x3(v1,v2,v3);
+    (R_k * q_k).getSkewSymmetricMatrix(&v1,&v2,&v3);
+    btMatrix3x3 K_q = btMatrix3x3(v1,v2,v3);
+    btVector3 h_world = R_j * h_j;
+    
+    //Get Velocities
+    btVector3 aV_j = body_j.getAngularVelocity();
+    btVector3 aV_k = body_k.getAngularVelocity();
+
+    cpMatrix dC(2,1);
+    dC(0,0) = h_world.dot((K_p*(aV_j - aV_k)));
+    dC(1,0) = h_world.dot((K_q*(aV_j - aV_k)));
+
+    cpMatrix S(2,2);
+    btMatrix3x3 tensor_sum = tensor_j+tensor_k;
+    btMatrix3x3 temp = K_p*tensor_sum*K_p;
+    S(0,0) = -multiplyVector3withMatrix3x3FromBothSides(h_world, temp);
+    temp = K_p*tensor_sum*K_q;
+    S(0,1) = -multiplyVector3withMatrix3x3FromBothSides(h_world, temp);
+    temp = K_q*tensor_sum*K_p;
+    S(1,0) = -multiplyVector3withMatrix3x3FromBothSides(h_world, temp);
+    temp = K_q*tensor_sum*K_q;
+    S(1,1) = -multiplyVector3withMatrix3x3FromBothSides(h_world, temp);
+
+    cpMatrix impulse(2,1);
+    if(!isZero(S.det2x2())){
+        cpMatrix C(2,1);
+        C(0,0) = h_world.dot(R_k*p_k);
+        C(1,0) = h_world.dot(R_k*q_k);
+        cpMatrix target_velocity = C*(1/timeStep)*getGamma()*(-1);
+        impulse = S.invert2x2() * (target_velocity - dC);
+    }
+
+    if(!(isZero(impulse(0,0)) && isZero(impulse(1,0)))){
+        body_j.setAngularVelocity(aV_j - tensor_j*K_p*h_world*impulse(0,0)
+                                    - tensor_j*K_q*h_world*impulse(1,0));
+        body_k.setAngularVelocity(aV_k + tensor_k*K_p*h_world*impulse(0,0)
+                                    + tensor_k*K_q*h_world*impulse(1,0));
+    }
+}
+
+void CustomDynamicsWorld::hingeIndividualAxisConstraint(btHingeConstraint* c, btScalar timeStep){
+    btRigidBody& body_j = c->getRigidBodyA();
+    btRigidBody& body_k = c->getRigidBodyB();
+
+    const auto R_j = body_j.getWorldTransform().getBasis();
+    const auto R_k = body_k.getWorldTransform().getBasis();
+
+    // Bullet stores the orthogonal basis p, q, h as columns of an "offset frame" basis
+    const auto h_j = c->getFrameOffsetA().getBasis().getColumn(2);
+    const auto p_k = c->getFrameOffsetB().getBasis().getColumn(0);
+    const auto q_k = c->getFrameOffsetB().getBasis().getColumn(1);
 
     auto tensor_j = body_j.getInvInertiaTensorWorld();
     auto tensor_k = body_k.getInvInertiaTensorWorld();
@@ -251,14 +309,10 @@ void CustomDynamicsWorld::hingeAxisConstraint(btHingeConstraint* c, btScalar tim
     btScalar dC_p = h_world.dot((K_p*(aV_j - aV_k)));
     btScalar dC_q = h_world.dot((K_q*(aV_j - aV_k)));
 
-    //printVector(dC_p, "dC_p");
-
     btMatrix3x3 temp = K_p * (tensor_j + tensor_k) * K_p;
     btScalar S_p = -multiplyVector3withMatrix3x3FromBothSides(h_world, temp);
-    //cout << "S_p: " << S_p << endl;
     temp = K_q * (tensor_j + tensor_k) * K_q;
     btScalar S_q = -multiplyVector3withMatrix3x3FromBothSides(h_world, temp);
-    //cout << "S_q: " << S_q << endl;
 
     btScalar impulse_p = 0;
     if(!isZero(S_p)){
@@ -273,13 +327,6 @@ void CustomDynamicsWorld::hingeAxisConstraint(btHingeConstraint* c, btScalar tim
         btScalar target_velocity = -getGamma()*C*(1/timeStep);
         impulse_q = (target_velocity-dC_q) * (1/S_q);
     }
-
-
-    //printVector(impulse_p, "impulse_p");
-    //printVector(impulse_q, "impulse_q");
-
-    // printVector(tensor_j*K_p*local_h*impulse_p, "vel up, p");
-    // printVector(tensor_k*K_q*local_h*impulse_q, "vel up, q");
 
     if(!(isZero(impulse_p) && isZero(impulse_q))){
         body_j.setAngularVelocity(aV_j - tensor_j*K_p*h_world*impulse_p
@@ -424,7 +471,7 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
                     // This is analogous to ball joints; To test this let a box fall onto a plane from high up 
                     // => With Gamma = 0 it will clip into the plane but with Gamma > 0 it will correct itself
                     // A nice effect is: The higher gamma the more the objects bounce, with Gamma > 1 they will gain energy with each collision
-                    btScalar target_velocity = (-getGamma())*C*(1/timeStep);
+                    //btScalar target_velocity = (-getGamma())*C*(1/timeStep);
 
                     btScalar impulse = 0;
                     if(!isZero(S)){ // S needs to be invertible

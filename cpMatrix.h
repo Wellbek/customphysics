@@ -42,6 +42,9 @@ class cpMatrix{
         cpMatrix operator-=(const cpMatrix&);
         cpMatrix operator*=(const cpMatrix&);
 
+        cpMatrix invert2x2();
+        float det2x2();
+
         void print(string);
 
 };

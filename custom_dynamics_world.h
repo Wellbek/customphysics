@@ -81,8 +81,8 @@ protected:
     void hingeJointConstraintCorrection(std::vector<btHingeConstraint *> &constraints, btScalar timeStep);
 
     void hingeBallJointConstraint(btHingeConstraint* c, btScalar timeStep);
-
-    void hingeAxisConstraint(btHingeConstraint* c, btScalar timeStep);
+    void hingeIndividualAxisConstraint(btHingeConstraint* c, btScalar timeStep);
+    void hingeCombinedAxisConstraint(btHingeConstraint* c, btScalar timeStep);
 
     void manifoldCorrection(vector<btPersistentManifold *> &manifolds, btScalar timeStep, int iteration,  vector<btScalar> &target_velocities);
 
