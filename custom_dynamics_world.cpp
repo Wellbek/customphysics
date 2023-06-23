@@ -70,6 +70,7 @@ void CustomDynamicsWorld::sequentialImpulses(btScalar timeStep){
     const auto num_constraints = this->getNumConstraints();
     vector<btPoint2PointConstraint *> point_constraints;
     vector<btHingeConstraint *> hinge_constraints;
+    vector<btScalar> accumulated_impulses;
 
     for (int i = 0; i < num_constraints; ++i){
         auto c = this->getConstraint(i);
@@ -77,6 +78,7 @@ void CustomDynamicsWorld::sequentialImpulses(btScalar timeStep){
             point_constraints.push_back(dynamic_cast<btPoint2PointConstraint *>(c));
         }else if(c->getConstraintType() == HINGE_CONSTRAINT_TYPE){
             hinge_constraints.push_back(dynamic_cast<btHingeConstraint *>(c));
+            accumulated_impulses.push_back(0);
         }
     }
 
@@ -89,7 +91,7 @@ void CustomDynamicsWorld::sequentialImpulses(btScalar timeStep){
         //2.1 Ball joints constraints
         if(getApplyBallJointsCorrections()) point2PointConstraintCorrection(point_constraints, timeStep);
 
-        if(getApplyHingeJointsCorrections()) hingeJointConstraintCorrection(hinge_constraints, timeStep);
+        if(getApplyHingeJointsCorrections()) hingeJointConstraintCorrection(hinge_constraints, timeStep, accumulated_impulses);
         // 2.2 Non-penetration and friction constraints
         if(getApplyFrictionCorrections() || getApplyContactCorrections()) manifoldCorrection(manifolds, timeStep, i, target_velocities);
     }
@@ -157,8 +159,10 @@ void CustomDynamicsWorld::point2PointConstraintCorrection(vector<btPoint2PointCo
 }
 
 /**/
-void CustomDynamicsWorld::hingeJointConstraintCorrection(vector<btHingeConstraint *> &constraints, btScalar timeStep){
-    for (auto c : constraints){
+void CustomDynamicsWorld::hingeJointConstraintCorrection(vector<btHingeConstraint *> &constraints, btScalar timeStep, vector<btScalar> &accumulated_impulses){
+    for (int c_ind = 0; c_ind < constraints.size(); c_ind++){
+        auto c = constraints.at(c_ind);
+
         hingeBallJointConstraint(c, timeStep);
 
         if(getHingeWith2x2()){
@@ -168,6 +172,8 @@ void CustomDynamicsWorld::hingeJointConstraintCorrection(vector<btHingeConstrain
                 hingeIndividualAxisConstraint(c, timeStep);
             }
         }
+
+        if(c->getEnableAngularMotor()) hingeMotorConstraint(c, c_ind, timeStep, accumulated_impulses);
     }
 }
 
@@ -336,6 +342,48 @@ void CustomDynamicsWorld::hingeIndividualAxisConstraint(btHingeConstraint* c, bt
     }
 }
 
+void CustomDynamicsWorld::hingeMotorConstraint(btHingeConstraint* c, int c_ind, btScalar timeStep, vector<btScalar> &accumulated_impulses){
+    btRigidBody& body_j = c->getRigidBodyA();
+    btRigidBody& body_k = c->getRigidBodyB();
+
+    const auto R_j = body_j.getWorldTransform().getBasis();
+    const auto R_k = body_k.getWorldTransform().getBasis();
+
+    // Bullet stores the orthogonal basis p, q, h as columns of an "offset frame" basis
+    const auto h_j = c->getFrameOffsetA().getBasis().getColumn(2);
+    const auto h_k = c->getFrameOffsetB().getBasis().getColumn(2);
+
+    auto tensor_j = body_j.getInvInertiaTensorWorld();
+    auto tensor_k = body_k.getInvInertiaTensorWorld();
+
+    btVector3 h = (R_j*h_j + R_k*h_k)/2;
+    if(h.length() != 0) h.normalize();
+
+    btVector3 aV_j = body_j.getAngularVelocity();
+    btVector3 aV_k = body_k.getAngularVelocity();
+    btScalar aV_target = c->getMotorTargetVelocity();
+
+    btScalar dC = h.dot(aV_j-aV_k) - aV_target;
+
+    btMatrix3x3 tensor_sum = tensor_j+tensor_k;
+    btScalar S = multiplyVector3withMatrix3x3FromBothSides(h, tensor_sum);
+
+    btScalar impulse = 0;
+    if(!isZero(S)){
+        impulse = (1/S) * -dC;
+
+        auto& acc_impulse = accumulated_impulses.at(c_ind);
+        auto max_impulse = c->getMaxMotorImpulse();
+
+        btClamp<btScalar>(impulse, -1 * max_impulse - acc_impulse, max_impulse - acc_impulse);
+
+        acc_impulse += impulse;
+    }
+
+    body_j.setAngularVelocity(aV_j + tensor_j*h*impulse);
+    body_k.setAngularVelocity(aV_k - tensor_k*h*impulse);
+}
+
 
 /*
 Combines contactCorrection and frictionCorrection as well as computation of t1, t2 to need to loop over all manifolds only once.
@@ -424,7 +472,7 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
                     body_k->setLinearVelocity(lV_k-m_inv_k*old_impulse*n - m_inv_k*(a1*t1 + a2*t2));
                     body_k->setAngularVelocity(aV_k-old_impulse*(tensor_k*K_k*n) - tensor_k*(K_k*t1*a1 + K_k*t2*a2));
                     
-                    //Update Velocity Variables
+                    //Update Variables
                     lV_j = body_j->getLinearVelocity();
                     aV_j = body_j->getAngularVelocity();
                     lV_k = body_k->getLinearVelocity();

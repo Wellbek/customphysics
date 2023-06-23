@@ -78,11 +78,12 @@ protected:
 
 	void point2PointConstraintCorrection(std::vector<btPoint2PointConstraint *> &constraints, btScalar timeStep);
 
-    void hingeJointConstraintCorrection(std::vector<btHingeConstraint *> &constraints, btScalar timeStep);
+    void hingeJointConstraintCorrection(std::vector<btHingeConstraint *> &constraints, btScalar timeStep, vector<btScalar> &accumulated_impulses);
 
     void hingeBallJointConstraint(btHingeConstraint* c, btScalar timeStep);
     void hingeIndividualAxisConstraint(btHingeConstraint* c, btScalar timeStep);
     void hingeCombinedAxisConstraint(btHingeConstraint* c, btScalar timeStep);
+    void hingeMotorConstraint(btHingeConstraint* c, int c_ind, btScalar timeStep, vector<btScalar> &accumulated_impulses);
 
     void manifoldCorrection(vector<btPersistentManifold *> &manifolds, btScalar timeStep, int iteration,  vector<btScalar> &target_velocities);
 
