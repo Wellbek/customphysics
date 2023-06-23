@@ -28,6 +28,7 @@ private:
     bool m_apply_ball_joints_constraints; // toggle to correct for ball joints
     bool m_apply_hinge_joints_constraints;
     bool m_warm_starting;
+    float m_warm_starting_factor;
     bool m_hinge_with_2x2;
 
 public:
@@ -39,7 +40,7 @@ public:
                             : btSoftRigidDynamicsWorld(dispatcher, pairCache, constraintSolver, collisionConfiguration, softBodySolver),
                               m_constraint_iters(10), m_hinge_iters(10), m_gamma(0.1f), m_mu(0.3f), 
                               m_apply_friction_constraints(true), m_apply_ball_joints_constraints(true), m_apply_contact_constraints(true),
-                              m_apply_hinge_joints_constraints(true), m_warm_starting(true), m_hinge_with_2x2(false) {}
+                              m_apply_hinge_joints_constraints(true), m_warm_starting(true), m_warm_starting_factor(1.f), m_hinge_with_2x2(false) {}
 
     void setConstraintIterations(int iterations) { m_constraint_iters = iterations; }
     int getConstraintIterations() const { return m_constraint_iters; }
@@ -67,6 +68,9 @@ public:
 
     void setWarmStarting(bool warm_starting) { m_warm_starting = warm_starting; }
     bool getWarmStarting() const { return m_warm_starting; }
+
+    void setWarmStartingFactor(float factor) { m_warm_starting_factor = factor; }
+    float getWarmStartingFactor() const { return m_warm_starting_factor; }
 
     void setHingeWith2x2(bool hw2) { m_hinge_with_2x2 = hw2; }
     bool getHingeWith2x2() const { return m_hinge_with_2x2; }

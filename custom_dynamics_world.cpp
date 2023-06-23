@@ -455,40 +455,11 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
                 btScalar C =  n.dot(worldDiff);
                 btScalar dC = n.dot(lV_j)-n.dot(K_j*aV_j)-n.dot(lV_k)+n.dot(K_k*aV_k);
                 
-
                 if (!getWarmStarting()){
                     contact.m_appliedImpulse = 0;
                     contact.m_appliedImpulseLateral1 = 0;
                     contact.m_appliedImpulseLateral2 = 0;
-                } else{
-                    btScalar old_impulse = contact.m_appliedImpulse;
-                    btScalar a1 = contact.m_appliedImpulseLateral1;
-                    btScalar a2 = contact.m_appliedImpulseLateral2;
-                    btVector3 t1 = contact.m_lateralFrictionDir1;
-                    btVector3 t2 = contact.m_lateralFrictionDir2;
-                    body_j->setLinearVelocity(lV_j+m_inv_j*old_impulse*n + m_inv_j*(a1*t1 + a2*t2));
-                    body_j->setAngularVelocity(aV_j+old_impulse*(tensor_j*K_j*n) + tensor_j*(K_j*t1*a1 + K_j*t2*a2));
-
-                    body_k->setLinearVelocity(lV_k-m_inv_k*old_impulse*n - m_inv_k*(a1*t1 + a2*t2));
-                    body_k->setAngularVelocity(aV_k-old_impulse*(tensor_k*K_k*n) - tensor_k*(K_k*t1*a1 + K_k*t2*a2));
-                    
-                    //Update Variables
-                    lV_j = body_j->getLinearVelocity();
-                    aV_j = body_j->getAngularVelocity();
-                    lV_k = body_k->getLinearVelocity();
-                    aV_k = body_k->getAngularVelocity();
-                    
-                    R_j = body_j->getWorldTransform().getBasis();
-                    R_k = body_k->getWorldTransform().getBasis();
-
-                    tensor_j = body_j->getInvInertiaTensorWorld();
-                    tensor_k = body_k->getInvInertiaTensorWorld();
-
-                    (R_j * r_j).getSkewSymmetricMatrix(&v1,&v2,&v3);
-                    K_j = btMatrix3x3(v1,v2,v3);
-                    (R_k * r_k).getSkewSymmetricMatrix(&v1,&v2,&v3);
-                    K_k = btMatrix3x3(v1,v2,v3);
-                } 
+                }
             }
             
             auto KJK_j = K_j*tensor_j*K_j;
@@ -509,29 +480,27 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
                     //cout << contact.m_targetVelocity << endl;
                 }
 
-                if(C < -epsilon || (isZero(C) && dC < -epsilon)){ //Constraint is only violated when C negative or when C = 0 but dC<0
-
-
-                    //We only need this S when we reach this conditional
-                    btScalar S = (m_inv_j + m_inv_k)*n.length2() - multiplyVector3withMatrix3x3FromBothSides(n, KJK_j)
-                                                                - multiplyVector3withMatrix3x3FromBothSides(n, KJK_k);
-
-                    // This is analogous to ball joints; To test this let a box fall onto a plane from high up 
-                    // => With Gamma = 0 it will clip into the plane but with Gamma > 0 it will correct itself
-                    // A nice effect is: The higher gamma the more the objects bounce, with Gamma > 1 they will gain energy with each collision
-                    //btScalar target_velocity = (-getGamma())*C*(1/timeStep);
+                if(C < epsilon || (isZero(C) && dC < epsilon)){ //Constraint is only violated when C negative or when C = 0 but dC<0
 
                     btScalar impulse = 0;
-                    if(!isZero(S)){ // S needs to be invertible
-                        impulse = (target_velocities.at(tV_index+c) - dC) * (1/S);
-                    }
+                    if(iteration == 0 && getWarmStarting()){
+                        contact.m_appliedImpulse *= getWarmStartingFactor();
+                        impulse = contact.m_appliedImpulse;
+                    }else{
+                        //We only need this S when we reach this conditional
+                        btScalar S = (m_inv_j + m_inv_k)*n.length2() - multiplyVector3withMatrix3x3FromBothSides(n, KJK_j)
+                                                                    - multiplyVector3withMatrix3x3FromBothSides(n, KJK_k);
+                        if(!isZero(S)){ // S needs to be invertible
+                            impulse = (target_velocities.at(tV_index+c) - dC) * (1/S);
+                        }
 
-                    if(isZero(impulse)) continue;
+                        if(isZero(impulse)) continue;
 
-                    if(contact.m_appliedImpulse + impulse < 0) {
-                        impulse = -contact.m_appliedImpulse;
+                        if(contact.m_appliedImpulse + impulse < 0) {
+                            impulse = -contact.m_appliedImpulse;
+                        }
+                        contact.m_appliedImpulse += impulse;
                     }
-                    contact.m_appliedImpulse += impulse;
     
                     //apply impulse
                     body_j->setLinearVelocity(lV_j+m_inv_j*impulse*n);
@@ -546,15 +515,7 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
             if(getApplyFrictionCorrections()) {
                 auto t1 = contact.m_lateralFrictionDir1;
                 auto t2 = contact.m_lateralFrictionDir2;
-
-                //Calculate S = GM^-1G^T
-                btScalar S1 = (m_inv_j + m_inv_k)*t1.length2() - multiplyVector3withMatrix3x3FromBothSides(t1, KJK_j)
-                                                         - multiplyVector3withMatrix3x3FromBothSides(t1, KJK_k);
-                btScalar S2 = (m_inv_j + m_inv_k)*t2.length2() - multiplyVector3withMatrix3x3FromBothSides(t2, KJK_j)
-                                                         - multiplyVector3withMatrix3x3FromBothSides(t2, KJK_k);
-
-                //cout << "S1: " << S1 << endl;
-
+                
                 // get new velocities, since we may have changed them for contact correction
                 lV_j = body_j->getLinearVelocity();
                 aV_j = body_j->getAngularVelocity();
@@ -563,29 +524,43 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
 
                 auto mu = getMU();
                 auto lambda = contact.m_appliedImpulse;
+
                 btScalar deltaA1 = 0;
                 btScalar deltaA2 = 0;
-                if(!isZero(S1)){
-                    auto& a1 = contact.m_appliedImpulseLateral1;
+                if(iteration == 0 && getWarmStarting()){
+                    contact.m_appliedImpulseLateral1 *= getWarmStartingFactor();
+                    contact.m_appliedImpulseLateral2 *= getWarmStartingFactor();
+                    deltaA1 = contact.m_appliedImpulseLateral1;
+                    deltaA2 = contact.m_appliedImpulseLateral2;
+                }else{
+                    //Calculate S = GM^-1G^T
+                    btScalar S1 = (m_inv_j + m_inv_k)*t1.length2() - multiplyVector3withMatrix3x3FromBothSides(t1, KJK_j)
+                                                            - multiplyVector3withMatrix3x3FromBothSides(t1, KJK_k);
+                    btScalar S2 = (m_inv_j + m_inv_k)*t2.length2() - multiplyVector3withMatrix3x3FromBothSides(t2, KJK_j)
+                                                            - multiplyVector3withMatrix3x3FromBothSides(t2, KJK_k);
 
-                    btScalar dC1 = t1.dot(lV_j)-t1.dot(K_j*aV_j)-t1.dot(lV_k)+t1.dot(K_k*aV_k);
-                    deltaA1 = dC1 * -1 * (1/S1);
+                    if(!isZero(S1)){
+                        auto& a1 = contact.m_appliedImpulseLateral1;
 
-                    btClamp<btScalar>(deltaA1, -1 * (mu * lambda) - a1, (mu * lambda) - a1);
+                        btScalar dC1 = t1.dot(lV_j)-t1.dot(K_j*aV_j)-t1.dot(lV_k)+t1.dot(K_k*aV_k);
+                        deltaA1 = dC1 * -1 * (1/S1);
 
-                    if(isZero(deltaA1)) deltaA1 = 0;
-                    a1 += deltaA1;
-                }
-                if(!isZero(S2)){        
-                    auto& a2 = contact.m_appliedImpulseLateral2;
+                        btClamp<btScalar>(deltaA1, -1 * (mu * lambda) - a1, (mu * lambda) - a1);
 
-                    btScalar dC2 = t2.dot(lV_j)-t2.dot(K_j*aV_j)-t2.dot(lV_k)+t2.dot(K_k*aV_k);
-                    deltaA2 = dC2 * -1 * (1/S2);
+                        if(isZero(deltaA1)) deltaA1 = 0;
+                        a1 += deltaA1;
+                    }
+                    if(!isZero(S2)){        
+                        auto& a2 = contact.m_appliedImpulseLateral2;
 
-                    btClamp<btScalar>(deltaA2, -1 * (mu * lambda) - a2, (mu * lambda) - a2);
+                        btScalar dC2 = t2.dot(lV_j)-t2.dot(K_j*aV_j)-t2.dot(lV_k)+t2.dot(K_k*aV_k);
+                        deltaA2 = dC2 * -1 * (1/S2);
 
-                    if(isZero(deltaA2)) deltaA2 = 0;
-                    a2 += deltaA2;
+                        btClamp<btScalar>(deltaA2, -1 * (mu * lambda) - a2, (mu * lambda) - a2);
+
+                        if(isZero(deltaA2)) deltaA2 = 0;
+                        a2 += deltaA2;
+                    }
                 }
 
                 //apply impulses

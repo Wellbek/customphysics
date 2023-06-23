@@ -90,6 +90,10 @@ void register_customphysics_types() {
 	ProjectSettings::get_singleton()->set_custom_property_info("physics/customphysics/warm_starting",
 			PropertyInfo(Variant::BOOL, "physics/customphysics/warm_starting"));
 
+	GLOBAL_DEF("physics/customphysics/warm_starting_factor", 1.f);
+	ProjectSettings::get_singleton()->set_custom_property_info("physics/customphysics/warm_starting_factor",
+			PropertyInfo(Variant::REAL, "physics/customphysics/warm_starting_factor"));
+
 	GLOBAL_DEF("physics/customphysics/hinge_with_2x2", false);
 	ProjectSettings::get_singleton()->set_custom_property_info("physics/customphysics/hinge_with_2x2",
 			PropertyInfo(Variant::BOOL, "physics/customphysics/hinge_with_2x2"));
