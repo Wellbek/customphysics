@@ -450,10 +450,6 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
                 
                 contact.m_lateralFrictionDir2 = n.cross(contact.m_lateralFrictionDir1);
                 if(contact.m_lateralFrictionDir2.length() != 0) contact.m_lateralFrictionDir2.normalize();
-
-                btVector3 worldDiff = (body_j->getCenterOfMassPosition() + R_j*r_j)-(body_k->getCenterOfMassPosition() + R_k*r_k);
-                btScalar C =  n.dot(worldDiff);
-                btScalar dC = n.dot(lV_j)-n.dot(K_j*aV_j)-n.dot(lV_k)+n.dot(K_k*aV_k);
                 
                 if (!getWarmStarting()){
                     contact.m_appliedImpulse = 0;
@@ -480,7 +476,7 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
                     //cout << contact.m_targetVelocity << endl;
                 }
 
-                if(C < epsilon || (isZero(C) && dC < epsilon)){ //Constraint is only violated when C negative or when C = 0 but dC<0
+                if(C < -epsilon || (isZero(C) && dC < -epsilon)){ //Constraint is only violated when C negative or when C = 0 but dC<0
 
                     btScalar impulse = 0;
                     if(iteration == 0 && getWarmStarting()){
@@ -515,6 +511,20 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
             if(getApplyFrictionCorrections()) {
                 auto t1 = contact.m_lateralFrictionDir1;
                 auto t2 = contact.m_lateralFrictionDir2;
+
+                R_j = body_j->getWorldTransform().getBasis();
+                R_k = body_k->getWorldTransform().getBasis();
+
+                tensor_j = body_j->getInvInertiaTensorWorld();
+                tensor_k = body_k->getInvInertiaTensorWorld();
+
+                (R_j * r_j).getSkewSymmetricMatrix(&v1,&v2,&v3);
+                K_j = btMatrix3x3(v1,v2,v3);
+                (R_k * r_k).getSkewSymmetricMatrix(&v1,&v2,&v3);
+                K_k = btMatrix3x3(v1,v2,v3);
+
+                KJK_j = K_j*tensor_j*K_j;
+                KJK_k = K_k*tensor_k*K_k;
                 
                 // get new velocities, since we may have changed them for contact correction
                 lV_j = body_j->getLinearVelocity();

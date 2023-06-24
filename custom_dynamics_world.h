@@ -15,7 +15,7 @@ using namespace std;
 
 #define I btMatrix3x3::getIdentity()
 
-#define epsilon 0.000001f
+#define epsilon 0.0000001f
 
 class CustomDynamicsWorld : public btSoftRigidDynamicsWorld {
 private:
