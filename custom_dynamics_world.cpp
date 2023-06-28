@@ -363,13 +363,13 @@ void CustomDynamicsWorld::hingeMotorConstraint(btHingeConstraint* c, int c_ind, 
     btVector3 aV_k = body_k.getAngularVelocity();
     btScalar aV_target = c->getMotorTargetVelocity();
 
-    btScalar dC = h.dot(aV_j-aV_k) - aV_target;
-
     btMatrix3x3 tensor_sum = tensor_j+tensor_k;
     btScalar S = multiplyVector3withMatrix3x3FromBothSides(h, tensor_sum);
 
     btScalar impulse = 0;
     if(!isZero(S)){
+
+        btScalar dC = h.dot(aV_j-aV_k) - aV_target;
         impulse = (1/S) * -dC;
 
         auto& acc_impulse = accumulated_impulses.at(c_ind);
@@ -480,7 +480,7 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
 
                     btScalar impulse = 0;
                     if(iteration == 0 && getWarmStarting()){
-                        contact.m_appliedImpulse *= getWarmStartingFactor();
+                        contact.m_appliedImpulse = contact.m_appliedImpulse * getWarmStartingFactor();
                         impulse = contact.m_appliedImpulse;
                     }else{
                         //We only need this S when we reach this conditional

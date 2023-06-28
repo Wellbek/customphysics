@@ -625,7 +625,7 @@ void SpaceCustom::create_empty_world(bool p_create_soft_world) {
 		const bool ball_joints_correction = ProjectSettings::get_singleton()->get("physics/customphysics/ball_joints_constraints");
 		const bool hinge_joints_correction = ProjectSettings::get_singleton()->get("physics/customphysics/hinge_joints_constraints");
 		const bool warm_starting = ProjectSettings::get_singleton()->get("physics/customphysics/warm_starting");
-		const bool warm_starting_factor = ProjectSettings::get_singleton()->get("physics/customphysics/warm_starting_factor");
+		const float warm_starting_factor = ProjectSettings::get_singleton()->get("physics/customphysics/warm_starting_factor");
 		const bool hinge_with_2x2 = ProjectSettings::get_singleton()->get("physics/customphysics/hinge_with_2x2");
 		custom_world->setConstraintIterations(constraintIters);
 		custom_world->setHingeIterations(hingeIters);
