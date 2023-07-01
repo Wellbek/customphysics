@@ -54,7 +54,7 @@ void register_customphysics_types() {
 	ProjectSettings::get_singleton()->set_custom_property_info("physics/3d/active_soft_world",
 			PropertyInfo(Variant::BOOL, "physics/3d/active_soft_world"));
 
-	GLOBAL_DEF("physics/customphysics/constraint_iterations", 10);
+	GLOBAL_DEF("physics/customphysics/constraint_iterations", 30);
 	ProjectSettings::get_singleton()->set_custom_property_info("physics/customphysics/constraint_iterations",
 			PropertyInfo(Variant::INT, "physics/customphysics/constraint_iterations"));
 
@@ -62,9 +62,17 @@ void register_customphysics_types() {
 	ProjectSettings::get_singleton()->set_custom_property_info("physics/customphysics/hinge_iterations",
 			PropertyInfo(Variant::INT, "physics/customphysics/hinge_iterations"));
 
-	GLOBAL_DEF("physics/customphysics/gamma", 0.1f);
-	ProjectSettings::get_singleton()->set_custom_property_info("physics/customphysics/gamma",
-			PropertyInfo(Variant::REAL, "physics/customphysics/gamma"));
+	GLOBAL_DEF("physics/customphysics/contact_gamma", 0.1f);
+	ProjectSettings::get_singleton()->set_custom_property_info("physics/customphysics/contact_gamma",
+			PropertyInfo(Variant::REAL, "physics/customphysics/contact_gamma"));
+
+	GLOBAL_DEF("physics/customphysics/ball_joint_gamma", 0.05f);
+	ProjectSettings::get_singleton()->set_custom_property_info("physics/customphysics/ball_joint_gamma",
+			PropertyInfo(Variant::REAL, "physics/customphysics/ball_joint_gamma"));
+
+	GLOBAL_DEF("physics/customphysics/hinge_joint_gamma", 0.1f);
+	ProjectSettings::get_singleton()->set_custom_property_info("physics/customphysics/hinge_joint_gamma",
+			PropertyInfo(Variant::REAL, "physics/customphysics/hinge_joint_gamma"));
 
 	GLOBAL_DEF("physics/customphysics/mu", 0.3f);
 	ProjectSettings::get_singleton()->set_custom_property_info("physics/customphysics/mu",

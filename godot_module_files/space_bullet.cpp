@@ -618,7 +618,9 @@ void SpaceCustom::create_empty_world(bool p_create_soft_world) {
 		auto custom_world = new (world_mem) CustomDynamicsWorld(dispatcher, broadphase, solver, collisionConfiguration);
 		const int constraintIters = ProjectSettings::get_singleton()->get("physics/customphysics/constraint_iterations");
 		const int hingeIters = ProjectSettings::get_singleton()->get("physics/customphysics/hinge_iterations");
-		const float gamma = ProjectSettings::get_singleton()->get("physics/customphysics/gamma");
+		const float contact_gamma = ProjectSettings::get_singleton()->get("physics/customphysics/contact_gamma");
+		const float ball_gamma = ProjectSettings::get_singleton()->get("physics/customphysics/ball_joint_gamma");
+		const float hinge_gamma = ProjectSettings::get_singleton()->get("physics/customphysics/hinge_joint_gamma");
 		const float mu = ProjectSettings::get_singleton()->get("physics/customphysics/mu");
 		const bool friction_correction = ProjectSettings::get_singleton()->get("physics/customphysics/friction_constraints");
 		const bool contact_correction = ProjectSettings::get_singleton()->get("physics/customphysics/contact_constraints");
@@ -629,7 +631,9 @@ void SpaceCustom::create_empty_world(bool p_create_soft_world) {
 		const bool hinge_with_2x2 = ProjectSettings::get_singleton()->get("physics/customphysics/hinge_with_2x2");
 		custom_world->setConstraintIterations(constraintIters);
 		custom_world->setHingeIterations(hingeIters);
-		custom_world->setGamma(gamma);
+		custom_world->setContactGamma(contact_gamma);
+		custom_world->setBallGamma(ball_gamma);
+		custom_world->setHingeGamma(hinge_gamma);
 		custom_world->setMU(mu);
 		custom_world->setApplyFrictionCorrections(friction_correction);
 		custom_world->setApplyContactCorrections(contact_correction);

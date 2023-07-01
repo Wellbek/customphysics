@@ -140,7 +140,7 @@ void CustomDynamicsWorld::point2PointConstraintCorrection(vector<btPoint2PointCo
         
         btVector3 C = (body_j.getCenterOfMassPosition() + R_j*r_j)-(body_k.getCenterOfMassPosition() + R_k*r_k);
 
-        btVector3 target_velocity = (-getGamma())*C*(1/timeStep) - dC;
+        btVector3 target_velocity = (-getBallGamma())*C*(1/timeStep) - dC;
 
         btVector3 impulse = {0,0,0};
         if(!isZero(S.determinant())){
@@ -212,7 +212,7 @@ void CustomDynamicsWorld::hingeBallJointConstraint(btHingeConstraint* c, btScala
     
     btVector3 C = (body_j.getCenterOfMassPosition() + R_j*r_j)-(body_k.getCenterOfMassPosition() + R_k*r_k);
 
-    btVector3 target_velocity = (-getGamma())*C*(1/timeStep) - dC;
+    btVector3 target_velocity = (-getHingeGamma())*C*(1/timeStep) - dC;
 
     btVector3 impulse = {0,0,0};
     if(!isZero(S.determinant())){
@@ -274,7 +274,7 @@ void CustomDynamicsWorld::hingeCombinedAxisConstraint(btHingeConstraint* c, btSc
         cpMatrix C(2,1);
         C(0,0) = h_world.dot(R_k*p_k);
         C(1,0) = h_world.dot(R_k*q_k);
-        cpMatrix target_velocity = C*(1/timeStep)*getGamma()*(-1);
+        cpMatrix target_velocity = C*(1/timeStep)*getHingeGamma()*(-1);
         impulse = S.invert2x2() * (target_velocity - dC);
     }
 
@@ -323,14 +323,14 @@ void CustomDynamicsWorld::hingeIndividualAxisConstraint(btHingeConstraint* c, bt
     btScalar impulse_p = 0;
     if(!isZero(S_p)){
         btScalar C = h_world.dot(R_k*p_k);
-        btScalar target_velocity = -getGamma()*C*(1/timeStep);
+        btScalar target_velocity = -getHingeGamma()*C*(1/timeStep);
         impulse_p = (target_velocity-dC_p) * (1/S_p);
     }
     
     btScalar impulse_q = 0;
     if(!isZero(S_q)){
         btScalar C = h_world.dot(R_k*q_k);
-        btScalar target_velocity = -getGamma()*C*(1/timeStep);
+        btScalar target_velocity = -getHingeGamma()*C*(1/timeStep);
         impulse_q = (target_velocity-dC_q) * (1/S_q);
     }
 
@@ -468,7 +468,7 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
                 btScalar dC = n.dot(lV_j)-n.dot(K_j*aV_j)-n.dot(lV_k)+n.dot(K_k*aV_k); //G*u 
 
                 if(iteration == 0){
-                    btScalar stabilization = (-getGamma())*C*(1/timeStep);
+                    btScalar stabilization = (-getContactGamma())*C*(1/timeStep);
                     btScalar restitution = (-contact.m_combinedRestitution) * dC;
                     btScalar tV = max(stabilization, restitution);
                     if(C > epsilon) tV = 0;

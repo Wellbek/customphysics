@@ -21,7 +21,9 @@ class CustomDynamicsWorld : public btSoftRigidDynamicsWorld {
 private:
     int m_constraint_iters;
     int m_hinge_iters;
-    float m_gamma; // attenuator for drift correction per iteration
+    float m_contact_gamma; // attenuator for drift correction for normal correction per iteration
+    float m_ball_gamma; // attenuator for drift correction for ball joint correction per iteration
+    float m_hinge_gamma; // attenuator for drift correction for hinge joint correction (ball joint part + axis constraint) per iteration
     float m_mu; // attenuator for friction correction per iteration
     bool m_apply_friction_constraints; // toggle to correct for friction
     bool m_apply_contact_constraints; // toggle to correct for collisions
@@ -38,7 +40,7 @@ public:
                         btCollisionConfiguration* collisionConfiguration,
                         btSoftBodySolver* softBodySolver = 0)
                             : btSoftRigidDynamicsWorld(dispatcher, pairCache, constraintSolver, collisionConfiguration, softBodySolver),
-                              m_constraint_iters(10), m_hinge_iters(10), m_gamma(0.1f), m_mu(0.3f), 
+                              m_constraint_iters(30), m_hinge_iters(10), m_contact_gamma(0.1f), m_ball_gamma(0.05f), m_hinge_gamma(0.1f), m_mu(0.3f), 
                               m_apply_friction_constraints(true), m_apply_ball_joints_constraints(true), m_apply_contact_constraints(true),
                               m_apply_hinge_joints_constraints(true), m_warm_starting(true), m_warm_starting_factor(1.f), m_hinge_with_2x2(false) {}
 
@@ -48,8 +50,14 @@ public:
     void setHingeIterations(int iterations) { m_hinge_iters = iterations; }
     int getHingeIterations() const { return m_hinge_iters; }
 
-    void setGamma(float gamma) { m_gamma = gamma; }
-    float getGamma() const { return m_gamma; }
+    void setContactGamma(float gamma) { m_contact_gamma = gamma; }
+    float getContactGamma() const { return m_contact_gamma; }
+
+    void setBallGamma(float gamma) { m_ball_gamma = gamma; }
+    float getBallGamma() const { return m_ball_gamma; }
+
+    void setHingeGamma(float gamma) { m_hinge_gamma = gamma; }
+    float getHingeGamma() const { return m_hinge_gamma; }
     
     void setMU(float mu) { m_mu = mu; }
     float getMU() const { return m_mu; }
