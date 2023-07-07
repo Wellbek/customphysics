@@ -74,10 +74,6 @@ void register_customphysics_types() {
 	ProjectSettings::get_singleton()->set_custom_property_info("physics/customphysics/hinge_joint_gamma",
 			PropertyInfo(Variant::REAL, "physics/customphysics/hinge_joint_gamma"));
 
-	GLOBAL_DEF("physics/customphysics/mu", 0.3f);
-	ProjectSettings::get_singleton()->set_custom_property_info("physics/customphysics/mu",
-			PropertyInfo(Variant::REAL, "physics/customphysics/mu"));
-
 	GLOBAL_DEF("physics/customphysics/friction_constraints", true);
 	ProjectSettings::get_singleton()->set_custom_property_info("physics/customphysics/friction_constraints",
 			PropertyInfo(Variant::BOOL, "physics/customphysics/friction_constraints"));

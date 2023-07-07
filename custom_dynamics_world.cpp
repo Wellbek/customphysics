@@ -530,7 +530,7 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
                 lV_k = body_k->getLinearVelocity();
                 aV_k = body_k->getAngularVelocity();
 
-                auto mu = getMU();
+                auto mu = contact.m_combinedFriction;
                 auto lambda = contact.m_appliedImpulse;
 
                 btScalar deltaA1 = 0;

@@ -24,7 +24,6 @@ private:
     float m_contact_gamma; // attenuator for drift correction for normal correction per iteration
     float m_ball_gamma; // attenuator for drift correction for ball joint correction per iteration
     float m_hinge_gamma; // attenuator for drift correction for hinge joint correction (ball joint part + axis constraint) per iteration
-    float m_mu; // attenuator for friction correction per iteration
     bool m_apply_friction_constraints; // toggle to correct for friction
     bool m_apply_contact_constraints; // toggle to correct for collisions
     bool m_apply_ball_joints_constraints; // toggle to correct for ball joints
@@ -40,7 +39,7 @@ public:
                         btCollisionConfiguration* collisionConfiguration,
                         btSoftBodySolver* softBodySolver = 0)
                             : btSoftRigidDynamicsWorld(dispatcher, pairCache, constraintSolver, collisionConfiguration, softBodySolver),
-                              m_constraint_iters(30), m_hinge_iters(10), m_contact_gamma(0.1f), m_ball_gamma(0.05f), m_hinge_gamma(0.1f), m_mu(0.3f), 
+                              m_constraint_iters(30), m_hinge_iters(10), m_contact_gamma(0.1f), m_ball_gamma(0.05f), m_hinge_gamma(0.1f), 
                               m_apply_friction_constraints(true), m_apply_ball_joints_constraints(true), m_apply_contact_constraints(true),
                               m_apply_hinge_joints_constraints(true), m_warm_starting(true), m_warm_starting_factor(1.f), m_hinge_with_2x2(false) {}
 
@@ -58,9 +57,6 @@ public:
 
     void setHingeGamma(float gamma) { m_hinge_gamma = gamma; }
     float getHingeGamma() const { return m_hinge_gamma; }
-    
-    void setMU(float mu) { m_mu = mu; }
-    float getMU() const { return m_mu; }
 
     void setApplyFrictionCorrections(bool friction) { m_apply_friction_constraints = friction; }
     bool getApplyFrictionCorrections() const { return m_apply_friction_constraints; }

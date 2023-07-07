@@ -621,7 +621,6 @@ void SpaceCustom::create_empty_world(bool p_create_soft_world) {
 		const float contact_gamma = ProjectSettings::get_singleton()->get("physics/customphysics/contact_gamma");
 		const float ball_gamma = ProjectSettings::get_singleton()->get("physics/customphysics/ball_joint_gamma");
 		const float hinge_gamma = ProjectSettings::get_singleton()->get("physics/customphysics/hinge_joint_gamma");
-		const float mu = ProjectSettings::get_singleton()->get("physics/customphysics/mu");
 		const bool friction_correction = ProjectSettings::get_singleton()->get("physics/customphysics/friction_constraints");
 		const bool contact_correction = ProjectSettings::get_singleton()->get("physics/customphysics/contact_constraints");
 		const bool ball_joints_correction = ProjectSettings::get_singleton()->get("physics/customphysics/ball_joints_constraints");
@@ -634,7 +633,6 @@ void SpaceCustom::create_empty_world(bool p_create_soft_world) {
 		custom_world->setContactGamma(contact_gamma);
 		custom_world->setBallGamma(ball_gamma);
 		custom_world->setHingeGamma(hinge_gamma);
-		custom_world->setMU(mu);
 		custom_world->setApplyFrictionCorrections(friction_correction);
 		custom_world->setApplyContactCorrections(contact_correction);
 		custom_world->setApplyBallJointsCorrections(ball_joints_correction);
