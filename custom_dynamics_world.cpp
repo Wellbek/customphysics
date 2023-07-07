@@ -59,7 +59,6 @@ vector<btPersistentManifold*> fetchManifolds (btDynamicsWorld& world){
 }
 
 /* sequential impulses method:
-    1. Reset applied impulses α1 (and α2) and compute tangent vectors t1 (and t2) for each contact
     2. Until convergence or maximum number of iterations:
         2.1 Apply correctional impulses for joints
         2.2 Apply correctional normal impulses
@@ -469,15 +468,14 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
 
                 if(iteration == 0){
                     btScalar stabilization = (-getContactGamma())*C*(1/timeStep);
-                    btScalar restitution = (-contact.m_combinedRestitution) * dC;
+                    btScalar restitution = 0;
+                    if (dC < -1) restitution = (-contact.m_combinedRestitution) * dC; // -1 is fairly hard coded but works for our cases. Might needs to be adjusted with different gravities?
                     btScalar tV = max(stabilization, restitution);
                     if(C > epsilon) tV = 0;
                     target_velocities.push_back(tV);
-                    //cout << contact.m_targetVelocity << endl;
                 }
 
-                if(C < -epsilon || (isZero(C) && dC < -epsilon)){ //Constraint is only violated when C negative or when C = 0 but dC<0
-
+                if(C < -epsilon || (isZero(C) && dC < -epsilon)){ //Constraint is only violated when the bodies are already inside each other or if they are currently touching and will be inside each other 
                     btScalar impulse = 0;
                     if(iteration == 0 && getWarmStarting()){
                         contact.m_appliedImpulse = contact.m_appliedImpulse * getWarmStartingFactor();
@@ -498,7 +496,7 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
                         contact.m_appliedImpulse += impulse;
                     }
     
-                    //apply impulse
+                    //apply impulses
                     body_j->setLinearVelocity(lV_j+m_inv_j*impulse*n);
                     body_j->setAngularVelocity(aV_j+impulse*(tensor_j*K_j*n));
 
