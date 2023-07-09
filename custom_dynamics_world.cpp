@@ -469,7 +469,7 @@ void CustomDynamicsWorld::manifoldCorrection(vector<btPersistentManifold *> &man
                 if(iteration == 0){
                     btScalar stabilization = (-getContactGamma())*C*(1/timeStep);
                     btScalar restitution = 0;
-                    if (dC < -1) restitution = (-contact.m_combinedRestitution) * dC; // -1 is fairly hard coded but works for our cases. Might needs to be adjusted with different gravities?
+                    if (dC < -(body_k->getGravity().length()/10)) restitution = (-contact.m_combinedRestitution) * dC; // might be better ways for the threshold to be relative to gravity but it works for regular gravity values e.g. (0, -x, 0). (Have not conducted testing for irregular values)
                     btScalar tV = max(stabilization, restitution);
                     if(C > epsilon) tV = 0;
                     target_velocities.push_back(tV);
