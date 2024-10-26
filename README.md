@@ -5,9 +5,7 @@ This is a quick overview for the "custom physics" module, which facilitates impl
 custom physics functionality. The module is simply an adapted version of the "Bullet" module
 that ships with Godot.
 
-You should hopefully only need to edit the `custom_dynamics_world.cpp` file, as well as any other files
-that you might want to add yourself. In particular, you should **not** have to edit any of the files in the
-`godot_module_files` folder.
+Only the `custom_dynamics_world.cpp` file and some additional files created for specific needs were modified to complete this module. Notably, **none** of the files in the `godot_module_files` folder were altered.
 
 Compiling Godot from source
 ---------------------------
